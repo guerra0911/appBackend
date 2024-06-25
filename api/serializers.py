@@ -77,7 +77,7 @@ class CommentSerializer(serializers.ModelSerializer):
         extra_kwargs = {'note': {'write_only': True}}
 
 class NoteSerializer(serializers.ModelSerializer):
-    author = serializers.ReadOnlyField(source='author.username')
+    author = UserSerializer(read_only=True)
     likes = serializers.StringRelatedField(many=True, read_only=True)
     dislikes = serializers.StringRelatedField(many=True, read_only=True)
     comments = CommentSerializer(many=True, read_only=True)
