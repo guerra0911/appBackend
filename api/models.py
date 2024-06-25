@@ -3,6 +3,7 @@ from django.contrib.auth.models import User
 from django.conf import settings 
 from django.db.models.signals import post_save
 from django.dispatch import receiver
+from storages.backends.s3boto3 import S3Boto3Storage
 import logging
 
 logger = logging.getLogger(__name__)
@@ -28,20 +29,19 @@ class Profile(models.Model):
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     rating = models.IntegerField(default=0)
     following = models.ManyToManyField('self', related_name='followers', symmetrical=False, blank=True)
-    image = models.ImageField(default='profile_pics/default.jpg', upload_to='profile_pics')
+    image = models.ImageField(upload_to='profile_pics', default='profile_pics/default.jpg')
 
-    def update_profile(self, username=None):
+    def update_profile(self, username=None, image=None):
         if username:
             self.user.username = username
             self.user.save()
-            logger.debug(f"Username updated to {username} for user {self.user.id}")
-
+        if image:
+            self.image = image
+            self.save()
 
 @receiver(post_save, sender=settings.AUTH_USER_MODEL)
 def create_or_update_user_profile(sender, instance, created, **kwargs):
     if created:
         Profile.objects.create(user=instance)
-        logger.debug(f"Profile created for new user {instance.id}")
     instance.profile.save()
-    logger.debug(f"Profile saved for user {instance.id}")
 

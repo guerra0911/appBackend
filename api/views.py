@@ -40,6 +40,7 @@ class UserProfileView(APIView):
         except User.DoesNotExist:
             return Response({'error': 'User not found'}, status=404)
         
+# views.py
 class UpdateUserProfileView(APIView):
     parser_classes = (MultiPartParser, FormParser,)
     permission_classes = [IsAuthenticated]
@@ -47,16 +48,17 @@ class UpdateUserProfileView(APIView):
     def put(self, request):
         user = request.user
         data = request.data
+        print("Received data: %s", data)  # Debug log
 
-        # Use the serializer to validate and update the username
         serializer = UserSerializer(user, data=data, partial=True)
         if serializer.is_valid():
             serializer.save()
-            logger.debug(f"Profile updated for user {user.id}. Username: {data.get('username')}")
-            return Response(serializer.data, status=status.HTTP_200_OK)
+            print("Profile updated for user: %s", user.id)  # Debug log
+            return Response(serializer.data, status=200)
         else:
-            logger.error(f"Error updating profile for user {user.id}: {serializer.errors}")
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            print("Error updating profile: %s", serializer.errors)  # Debug log
+            return Response(serializer.errors, status=400)
+
 
 class NoteListCreate(generics.ListCreateAPIView):
     serializer_class = NoteSerializer

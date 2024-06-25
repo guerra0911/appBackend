@@ -2,6 +2,8 @@ from django.contrib.auth.models import User
 from rest_framework import serializers
 from .models import Note, Profile, Comment
 import re
+import uuid
+import os
 
 class ProfileSerializer(serializers.ModelSerializer):
     class Meta:
@@ -9,8 +11,8 @@ class ProfileSerializer(serializers.ModelSerializer):
         fields = ['rating', 'following', 'image']
 
 class UserSerializer(serializers.ModelSerializer):
-    profile = ProfileSerializer(read_only=True)
-    confirm_password = serializers.CharField(write_only=True)
+    profile = ProfileSerializer(required=False)
+    confirm_password = serializers.CharField(write_only=True, required=False)
     
     class Meta:
         model = User
@@ -32,8 +34,9 @@ class UserSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, data):
-        if data['password'] != data['confirm_password']:
-            raise serializers.ValidationError("Passwords do not match.")
+        if 'password' in data and 'confirm_password' in data:
+            if data['password'] != data['confirm_password']:
+                raise serializers.ValidationError("Passwords do not match.")
         return data
 
     def create(self, validated_data):
@@ -43,16 +46,28 @@ class UserSerializer(serializers.ModelSerializer):
         if profile_data:
             Profile.objects.update_or_create(user=user, defaults=profile_data)
         return user
-    
+
     def update(self, instance, validated_data):
         profile_data = validated_data.pop('profile', None)
         validated_data.pop('confirm_password', None)
+
         instance.username = validated_data.get('username', instance.username)
         instance.save()
-        if profile_data:
-            Profile.objects.update_or_create(user=instance, defaults=profile_data)
-        return instance
 
+        if profile_data:
+            profile = instance.profile
+            if 'image' in profile_data:
+                profile.image = profile_data['image']
+            profile.save()
+
+            # Print image details without using `path`
+            if 'image' in profile_data:
+                print("Profile image updated to:", profile.image.url)
+                print("Image details - Name:", profile.image.name)
+                print("Image details - Size:", profile.image.size)
+
+        return instance
+    
 class CommentSerializer(serializers.ModelSerializer):
     author = serializers.ReadOnlyField(source='author.username')
     
