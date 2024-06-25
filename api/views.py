@@ -48,13 +48,15 @@ class UpdateUserProfileView(APIView):
         user = request.user
         data = request.data
 
-        username = data.get('username')
-
-        user.profile.update_profile(username=username)
-
-        serializer = UserSerializer(user)
-        logger.debug(f"Profile updated for user {user.id}. Username: {username}")
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        # Use the serializer to validate and update the username
+        serializer = UserSerializer(user, data=data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            logger.debug(f"Profile updated for user {user.id}. Username: {data.get('username')}")
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        else:
+            logger.error(f"Error updating profile for user {user.id}: {serializer.errors}")
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class NoteListCreate(generics.ListCreateAPIView):
     serializer_class = NoteSerializer

@@ -31,7 +31,7 @@ SECRET_KEY = os.getenv('DJANGO_SECRET_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ["18.119.118.178", "ec2-18-119-118-178.us-east-2.compute.amazonaws.com"]
+ALLOWED_HOSTS = ["18.119.118.178", "ec2-18-119-118-178.us-east-2.compute.amazonaws.com", "192.168.2.131"]
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
