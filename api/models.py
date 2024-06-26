@@ -4,6 +4,7 @@ from django.conf import settings
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from storages.backends.s3boto3 import S3Boto3Storage
+from django.db.models import Count
 import logging
 
 logger = logging.getLogger(__name__)
@@ -37,6 +38,12 @@ class Profile(models.Model):
         if image:
             self.image = image
             self.save()
+    
+    def calculate_rating(self):
+        likes_count = Note.objects.filter(author=self.user).aggregate(total_likes=Count('likes'))['total_likes']
+        dislikes_count = Note.objects.filter(author=self.user).aggregate(total_dislikes=Count('dislikes'))['total_dislikes']
+        self.rating = (likes_count or 0) - (dislikes_count or 0)
+        self.save()
 
 @receiver(post_save, sender=settings.AUTH_USER_MODEL)
 def create_or_update_user_profile(sender, instance, created, **kwargs):

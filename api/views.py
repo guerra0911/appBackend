@@ -32,6 +32,7 @@ class UserProfileView(APIView):
     def get(self, request, user_id):
         try:
             user = User.objects.get(id=user_id)
+            user.profile.calculate_rating()
             user_serializer = UserSerializer(user)
             profile_serializer = ProfileSerializer(user.profile)
             notes_serializer = NoteSerializer(user.notes.all(), many=True)
@@ -92,15 +93,6 @@ class UserNotesView(generics.ListAPIView):
             return queryset.annotate(dislikes_count=Count('dislikes')).order_by('-dislikes_count')
         
         return queryset.order_by('-created_at')
-
-class FollowedUsersNotesView(generics.ListAPIView):
-    serializer_class = NoteSerializer
-    permission_classes = [IsAuthenticated]
-
-    def get_queryset(self):
-        user = self.request.user
-        followed_users = user.profile.following.all()
-        return Note.objects.filter(author__profile__in=followed_users)
 
 class AllNotesView(generics.ListAPIView):
     serializer_class = NoteSerializer
