@@ -8,6 +8,8 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.decorators import api_view
+from django.db.models import Count
+
 import logging
 
 logger = logging.getLogger(__name__)
@@ -94,10 +96,16 @@ class FollowedUsersNotesView(generics.ListAPIView):
 
 class AllNotesView(generics.ListAPIView):
     serializer_class = NoteSerializer
-    permission_classes = [IsAuthenticated]  # Or IsAuthenticated, based on your requirements
+    permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return Note.objects.all()
+        sort_by = self.request.query_params.get('sort_by', 'created_at')
+        if sort_by == 'most_likes':
+            return Note.objects.all().annotate(likes_count=Count('likes')).order_by('-likes_count')
+        elif sort_by == 'most_dislikes':
+            return Note.objects.all().annotate(dislikes_count=Count('dislikes')).order_by('-dislikes_count')
+        return Note.objects.all().order_by('-created_at')
+
 
 class NoteDelete(generics.DestroyAPIView):
     serializer_class = NoteSerializer
