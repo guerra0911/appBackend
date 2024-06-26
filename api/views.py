@@ -83,7 +83,15 @@ class UserNotesView(generics.ListAPIView):
 
     def get_queryset(self):
         user_id = self.kwargs['user_id']
-        return Note.objects.filter(author_id=user_id)
+        sort_by = self.request.query_params.get('sort_by', 'created_at')
+        queryset = Note.objects.filter(author_id=user_id)
+        
+        if sort_by == 'most_likes':
+            return queryset.annotate(likes_count=Count('likes')).order_by('-likes_count')
+        elif sort_by == 'most_dislikes':
+            return queryset.annotate(dislikes_count=Count('dislikes')).order_by('-dislikes_count')
+        
+        return queryset.order_by('-created_at')
 
 class FollowedUsersNotesView(generics.ListAPIView):
     serializer_class = NoteSerializer
@@ -157,5 +165,25 @@ def dislike_post(request, note_id):
 
         note.save()
         return Response({'likes': note.likes.count(), 'dislikes': note.dislikes.count()}, status=status.HTTP_200_OK)
+    except Note.DoesNotExist:
+        return Response({'error': 'Note not found'}, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(['GET'])
+def liked_by(request, note_id):
+    try:
+        note = Note.objects.get(id=note_id)
+        users = note.likes.all()
+        serializer = UserSerializer(users, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    except Note.DoesNotExist:
+        return Response({'error': 'Note not found'}, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(['GET'])
+def disliked_by(request, note_id):
+    try:
+        note = Note.objects.get(id=note_id)
+        users = note.dislikes.all()
+        serializer = UserSerializer(users, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
     except Note.DoesNotExist:
         return Response({'error': 'Note not found'}, status=status.HTTP_404_NOT_FOUND)
