@@ -23,7 +23,6 @@ class Note(models.Model):
 
     def __str__(self):
         return f"Note by {self.author.username} on {self.created_at}"
-    
 
 class Profile(models.Model):
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)

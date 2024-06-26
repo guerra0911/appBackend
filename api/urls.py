@@ -8,4 +8,6 @@ urlpatterns = [
     path("notes/user/<int:user_id>/", views.UserNotesView.as_view(), name="user-notes"),
     path("notes/following/", views.FollowedUsersNotesView.as_view(), name="followed-notes"),
     path("notes/all/", views.AllNotesView.as_view(), name="all-notes"),
+    path("notes/<int:note_id>/like/", views.like_post, name="like-post"),
+    path("notes/<int:note_id>/dislike/", views.dislike_post, name="dislike-post"),
 ]

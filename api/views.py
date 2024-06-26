@@ -7,6 +7,7 @@ from .models import Note, Profile, Comment
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.decorators import api_view
 import logging
 
 logger = logging.getLogger(__name__)
@@ -114,3 +115,39 @@ class CommentCreate(generics.CreateAPIView):
         note_id = self.kwargs['note_id']
         note = Note.objects.get(id=note_id)
         serializer.save(author=self.request.user, note=note)
+        
+@api_view(['POST'])
+def like_post(request, note_id):
+    try:
+        note = Note.objects.get(id=note_id)
+        user = request.user
+
+        if user in note.dislikes.all():
+            note.dislikes.remove(user)
+        if user not in note.likes.all():
+            note.likes.add(user)
+        else:
+            note.likes.remove(user)
+
+        note.save()
+        return Response({'likes': note.likes.count(), 'dislikes': note.dislikes.count()}, status=status.HTTP_200_OK)
+    except Note.DoesNotExist:
+        return Response({'error': 'Note not found'}, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(['POST'])
+def dislike_post(request, note_id):
+    try:
+        note = Note.objects.get(id=note_id)
+        user = request.user
+
+        if user in note.likes.all():
+            note.likes.remove(user)
+        if user not in note.dislikes.all():
+            note.dislikes.add(user)
+        else:
+            note.dislikes.remove(user)
+
+        note.save()
+        return Response({'likes': note.likes.count(), 'dislikes': note.dislikes.count()}, status=status.HTTP_200_OK)
+    except Note.DoesNotExist:
+        return Response({'error': 'Note not found'}, status=status.HTTP_404_NOT_FOUND)
