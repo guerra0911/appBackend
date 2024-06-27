@@ -110,17 +110,15 @@ class TournamentSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Tournament
-        fields = ['id', 'name', 'banner', 'logo', 'point_system', 'correct_score_bonus', 'winner_reward', 'loser_forfeit', 'teams']
+        fields = ['id', 'name', 'banner', 'logo', 'point_system', 'correct_score_bonus', 'winner_reward', 'loser_forfeit', 'teams', 'author']
 
     def create(self, validated_data):
         teams_data = validated_data.pop('teams', [])
         banner = validated_data.pop('banner', None)
         logo = validated_data.pop('logo', None)
         
-        # First, create the Tournament instance without banner and logo
         tournament = Tournament.objects.create(**validated_data)
         
-        # Now, add the banner and logo
         if banner:
             tournament.banner = banner
         if logo:
@@ -130,3 +128,5 @@ class TournamentSerializer(serializers.ModelSerializer):
         for team_data in teams_data:
             Team.objects.create(tournament=tournament, **team_data)
         return tournament
+
+
