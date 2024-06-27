@@ -51,3 +51,45 @@ def create_or_update_user_profile(sender, instance, created, **kwargs):
         Profile.objects.create(user=instance)
     instance.profile.save()
 
+def tournament_upload_path(instance, filename):
+    return f'tournaments/{instance.id}/{filename}'
+
+def team_upload_path(instance, filename):
+    return f'tournaments/{instance.tournament.id}/{filename}'
+
+class Team(models.Model):
+    name = models.CharField(max_length=100)
+    logo = models.ImageField(upload_to=team_upload_path)
+    tournament = models.ForeignKey('Tournament', related_name='teams', on_delete=models.CASCADE)
+
+    def __str__(self):
+        return self.name
+
+class Bracket(models.Model):
+    author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    is_actual = models.BooleanField(default=False)
+    left_side_round_of_16_teams = models.ManyToManyField(Team, related_name='left_round_of_16', blank=True)
+    left_side_quarter_finals = models.ManyToManyField(Team, related_name='left_quarter_finals', blank=True)
+    left_side_semi_finals = models.ManyToManyField(Team, related_name='left_semi_finals', blank=True)
+    finals = models.ManyToManyField(Team, related_name='finals', blank=True)
+    right_side_semi_finals = models.ManyToManyField(Team, related_name='right_semi_finals', blank=True)
+    right_side_quarter_finals = models.ManyToManyField(Team, related_name='right_quarter_finals', blank=True)
+    right_side_round_of_16_teams = models.ManyToManyField(Team, related_name='right_round_of_16', blank=True)
+
+    def __str__(self):
+        return f"Bracket by {self.author.username}"
+
+class Tournament(models.Model):
+    author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    name = models.CharField(max_length=100)
+    banner = models.ImageField(upload_to=tournament_upload_path)
+    logo = models.ImageField(upload_to=tournament_upload_path)
+    point_system = models.JSONField(default=list)
+    correct_score_bonus = models.IntegerField(default=0)
+    winner_reward = models.TextField()
+    loser_forfeit = models.TextField()
+    actual_bracket = models.OneToOneField(Bracket, related_name='actual_bracket', on_delete=models.CASCADE, null=True, blank=True)
+    predicted_brackets = models.ManyToManyField(Bracket, related_name='predicted_brackets', blank=True)
+
+    def __str__(self):
+        return self.name

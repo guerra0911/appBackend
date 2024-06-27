@@ -1,9 +1,9 @@
 from django.shortcuts import render
 from django.contrib.auth.models import User
-from rest_framework import generics, status
-from .serializers import UserSerializer, NoteSerializer, CommentSerializer, ProfileSerializer
+from rest_framework import generics, status, viewsets
+from .serializers import UserSerializer, NoteSerializer, CommentSerializer, ProfileSerializer, TournamentSerializer, TeamSerializer, BracketSerializer
 from rest_framework.permissions import IsAuthenticated, AllowAny
-from .models import Note, Profile, Comment
+from .models import Note, Profile, Comment, Tournament, Team, Bracket
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
@@ -123,6 +123,47 @@ class CommentCreate(generics.CreateAPIView):
         note_id = self.kwargs['note_id']
         note = Note.objects.get(id=note_id)
         serializer.save(author=self.request.user, note=note)
+
+class TeamViewSet(viewsets.ModelViewSet):
+    queryset = Team.objects.all()
+    serializer_class = TeamSerializer
+
+class BracketViewSet(viewsets.ModelViewSet):
+    queryset = Bracket.objects.all()
+    serializer_class = BracketSerializer
+
+class TournamentViewSet(viewsets.ModelViewSet):
+    queryset = Tournament.objects.all()
+    serializer_class = TournamentSerializer
+    
+class CreateTournamentView(APIView):
+    parser_classes = (MultiPartParser, FormParser)
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        data = request.data.dict()  # Convert QueryDict to regular dict
+        teams_data = []
+        
+        for key, value in data.items():
+            if key.startswith('teams['):
+                index = int(key.split('[')[1].split(']')[0])
+                field_name = key.split('][')[1][:-1]
+                
+                while len(teams_data) <= index:
+                    teams_data.append({})
+                
+                teams_data[index][field_name] = value
+        
+        data['teams'] = teams_data
+        serializer = TournamentSerializer(data=data)
+
+        if serializer.is_valid():
+            tournament = serializer.save(author=request.user)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        else:
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
         
 @api_view(['POST'])
 def like_post(request, note_id):

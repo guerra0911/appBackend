@@ -1,6 +1,6 @@
 from django.contrib.auth.models import User
 from rest_framework import serializers
-from .models import Note, Profile, Comment
+from .models import Note, Profile, Comment, Tournament, Team, Bracket
 import re
 import uuid
 import os
@@ -87,4 +87,46 @@ class NoteSerializer(serializers.ModelSerializer):
         fields = ["id", "content", "created_at", "author","likes", "dislikes", "comments"]
         extra_kwargs = {"author": {"read_only": True}}
 
-    
+class TeamSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Team
+        fields = ['id', 'name', 'logo']
+
+class BracketSerializer(serializers.ModelSerializer):
+    left_side_round_of_16_teams = TeamSerializer(many=True)
+    left_side_quarter_finals = TeamSerializer(many=True)
+    left_side_semi_finals = TeamSerializer(many=True)
+    finals = TeamSerializer(many=True)
+    right_side_semi_finals = TeamSerializer(many=True)
+    right_side_quarter_finals = TeamSerializer(many=True)
+    right_side_round_of_16_teams = TeamSerializer(many=True)
+
+    class Meta:
+        model = Bracket
+        fields = ['id', 'author', 'is_actual', 'left_side_round_of_16_teams', 'left_side_quarter_finals', 'left_side_semi_finals', 'finals', 'right_side_semi_finals', 'right_side_quarter_finals', 'right_side_round_of_16_teams']
+
+class TournamentSerializer(serializers.ModelSerializer):
+    teams = TeamSerializer(many=True, required=False)
+
+    class Meta:
+        model = Tournament
+        fields = ['id', 'name', 'banner', 'logo', 'point_system', 'correct_score_bonus', 'winner_reward', 'loser_forfeit', 'teams']
+
+    def create(self, validated_data):
+        teams_data = validated_data.pop('teams', [])
+        banner = validated_data.pop('banner', None)
+        logo = validated_data.pop('logo', None)
+        
+        # First, create the Tournament instance without banner and logo
+        tournament = Tournament.objects.create(**validated_data)
+        
+        # Now, add the banner and logo
+        if banner:
+            tournament.banner = banner
+        if logo:
+            tournament.logo = logo
+        tournament.save()
+
+        for team_data in teams_data:
+            Team.objects.create(tournament=tournament, **team_data)
+        return tournament

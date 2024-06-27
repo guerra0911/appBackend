@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.urls import path, include
-from api.views import CreateUserView, CurrentUserView, UpdateUserProfileView, UserProfileView
+from api.views import CreateUserView, CurrentUserView, UpdateUserProfileView, UserProfileView, CreateTournamentView
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from django.conf import settings
 from django.conf.urls.static import static
@@ -15,5 +15,6 @@ urlpatterns = [
     path("api/user/me/", CurrentUserView.as_view(), name="current_user"),
     path("api/user/me/update/", UpdateUserProfileView.as_view(), name="update_user_profile"),
     path("api/profile/user/<int:user_id>/", UserProfileView.as_view(), name="user-profile"),
+    path("api/tournaments/create/", CreateTournamentView.as_view(), name="create-tournament"),
 ]
 
