@@ -122,7 +122,7 @@ class BracketSerializer(serializers.ModelSerializer):
             'id', 'author', 'is_actual', 'left_side_round_of_16_teams',
             'left_side_quarter_finals', 'left_side_semi_finals', 'finals',
             'right_side_semi_finals', 'right_side_quarter_finals',
-            'right_side_round_of_16_teams', 'winner'
+            'right_side_round_of_16_teams', 'winner', 'score'
         ]
 
 

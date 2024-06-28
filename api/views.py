@@ -12,6 +12,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db.models import Count
 from django.db import transaction
+import json
 
 import logging
 
@@ -284,38 +285,46 @@ class TournamentViewSet(viewsets.ModelViewSet):
             actual_bracket.winner_id = winner_id
 
         actual_bracket.save()
+        
+        # Recalculate scores for all predicted brackets
+        self.recalculate_scores(tournament)
 
         return Response({'status': 'actual bracket updated', 'bracket': BracketSerializer(actual_bracket).data})
 
-
-    def update_predicted_bracket_scores(self, tournament): # self.update_predicted_bracket_scores(tournament)
+    def recalculate_scores(self, tournament):
         actual_bracket = tournament.actual_bracket
-        point_system = tournament.point_system
-        correct_score_bonus = tournament.correct_score_bonus
+        point_system = json.loads(tournament.point_system)  # Parse JSON string to list
+        point_system = list(map(int, point_system))  # Convert list items to integers
 
-        for predicted_bracket in tournament.predicted_brackets.all():
+        for bracket in tournament.predicted_brackets.all():
             score = 0
 
-            rounds = [
-                ('left_side_round_of_16_teams', 0),
-                ('right_side_round_of_16_teams', 0),
-                ('left_side_quarter_finals', 1),
-                ('right_side_quarter_finals', 1),
-                ('left_side_semi_finals', 2),
-                ('right_side_semi_finals', 2),
-                ('finals', 3)
-            ]
+            # Quarter finals
+            score += self.calculate_round_score(bracket.left_side_quarter_finals, actual_bracket.left_side_quarter_finals, point_system[0])
+            score += self.calculate_round_score(bracket.right_side_quarter_finals, actual_bracket.right_side_quarter_finals, point_system[0])
 
-            for round_name, round_index in rounds:
-                actual_teams = getattr(actual_bracket, round_name).all()
-                predicted_teams = getattr(predicted_bracket, round_name).all()
-                score += sum(1 for team in predicted_teams if team in actual_teams) * point_system[round_index]
+            # Semi finals
+            score += self.calculate_round_score(bracket.left_side_semi_finals, actual_bracket.left_side_semi_finals, point_system[1])
+            score += self.calculate_round_score(bracket.right_side_semi_finals, actual_bracket.right_side_semi_finals, point_system[1])
 
-            if actual_bracket.winner == predicted_bracket.winner:
-                score += correct_score_bonus
+            # Finals
+            score += self.calculate_round_score(bracket.finals, actual_bracket.finals, point_system[2])
 
-            predicted_bracket.score = score
-            predicted_bracket.save()
+            # Winner
+            if bracket.winner and actual_bracket.winner and bracket.winner.id == actual_bracket.winner.id:
+                score += point_system[3]
+
+            bracket.score = score if score != 0 else 0
+            bracket.save()
+
+
+    def calculate_round_score(self, predicted_round, actual_round, points_per_correct_prediction):
+        score = 0
+        for predicted, actual in zip(predicted_round, actual_round):
+            if predicted and actual and predicted['id'] == actual['id']:
+                score += points_per_correct_prediction
+        return score
+
 
         
 @api_view(['POST'])

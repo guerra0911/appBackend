@@ -66,8 +66,6 @@ class Team(models.Model):
     def __str__(self):
         return self.name
 
-from django.db import models
-
 class Bracket(models.Model):
     author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     tournament = models.ForeignKey('Tournament', related_name='brackets', on_delete=models.CASCADE)
@@ -84,7 +82,6 @@ class Bracket(models.Model):
 
     def __str__(self):
         return f"Bracket by {self.author.username}"
-
 
 class Tournament(models.Model):
     author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
