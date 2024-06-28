@@ -100,10 +100,12 @@ class BracketSerializer(serializers.ModelSerializer):
     right_side_semi_finals = TeamSerializer(many=True)
     right_side_quarter_finals = TeamSerializer(many=True)
     right_side_round_of_16_teams = TeamSerializer(many=True)
+    winner = TeamSerializer()  # Ensure winner is serialized as a full object
 
     class Meta:
         model = Bracket
-        fields = ['id', 'author', 'is_actual', 'left_side_round_of_16_teams', 'left_side_quarter_finals', 'left_side_semi_finals', 'finals', 'right_side_semi_finals', 'right_side_quarter_finals', 'right_side_round_of_16_teams']
+        fields = ['id', 'author', 'is_actual', 'left_side_round_of_16_teams', 'left_side_quarter_finals', 'left_side_semi_finals', 'finals', 'right_side_semi_finals', 'right_side_quarter_finals', 'right_side_round_of_16_teams', 'winner']
+
 
 class TournamentSerializer(serializers.ModelSerializer):
     teams = TeamSerializer(many=True, required=False)

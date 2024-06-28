@@ -188,6 +188,10 @@ class TournamentViewSet(viewsets.ModelViewSet):
 
         bracket.save()
 
+        # Ensure the bracket is associated with the tournament's predicted_brackets
+        tournament.predicted_brackets.add(bracket)
+        tournament.save()
+        
         return Response({'status': 'prediction submitted', 'bracket': BracketSerializer(bracket).data})
 
     
