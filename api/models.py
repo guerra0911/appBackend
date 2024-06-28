@@ -79,9 +79,11 @@ class Bracket(models.Model):
     right_side_round_of_16_teams = models.JSONField(default=list, blank=True)
     winner = models.ForeignKey(Team, related_name='winner', on_delete=models.SET_NULL, null=True, blank=True)
     score = models.IntegerField(default=0)
+    team_size = models.IntegerField(default=16)  # New field to distinguish team sizes
 
     def __str__(self):
         return f"Bracket by {self.author.username}"
+
 
 class Tournament(models.Model):
     author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
@@ -94,6 +96,7 @@ class Tournament(models.Model):
     loser_forfeit = models.TextField()
     actual_bracket = models.OneToOneField('Bracket', related_name='actual_bracket', on_delete=models.CASCADE, null=True, blank=True)  # Use string reference
     predicted_brackets = models.ManyToManyField(Bracket, related_name='predicted_brackets', blank=True)
-
+    team_size = models.IntegerField(default=16)
+    
     def __str__(self):
         return self.name

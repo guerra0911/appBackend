@@ -114,7 +114,8 @@ class BracketSerializer(serializers.ModelSerializer):
     right_side_round_of_16_teams = serializers.ListField(
         child=serializers.DictField(allow_null=True), required=False
     )
-    winner = TeamSerializer(allow_null=True)  # Ensure winner is serialized as a full object
+    winner = TeamSerializer(allow_null=True)
+    team_size = serializers.IntegerField()
 
     class Meta:
         model = Bracket
@@ -122,9 +123,8 @@ class BracketSerializer(serializers.ModelSerializer):
             'id', 'author', 'is_actual', 'left_side_round_of_16_teams',
             'left_side_quarter_finals', 'left_side_semi_finals', 'finals',
             'right_side_semi_finals', 'right_side_quarter_finals',
-            'right_side_round_of_16_teams', 'winner', 'score'
+            'right_side_round_of_16_teams', 'winner', 'score', 'team_size'
         ]
-
 
 class TournamentSerializer(serializers.ModelSerializer):
     teams = TeamSerializer(many=True, required=False)
@@ -133,7 +133,7 @@ class TournamentSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Tournament
-        fields = ['id', 'name', 'banner', 'logo', 'point_system', 'correct_score_bonus', 'winner_reward', 'loser_forfeit', 'teams', 'author', 'predicted_brackets', 'actual_bracket']
+        fields = ['id', 'name', 'banner', 'logo', 'point_system', 'correct_score_bonus', 'winner_reward', 'loser_forfeit', 'teams', 'author', 'predicted_brackets', 'actual_bracket', 'team_size']
 
     def create(self, validated_data):
         teams_data = validated_data.pop('teams', [])
@@ -148,8 +148,6 @@ class TournamentSerializer(serializers.ModelSerializer):
             tournament.logo = logo
         tournament.save()
 
-        for team_data in teams_data:
-            Team.objects.create(tournament=tournament, **team_data)
+        teams = [Team(tournament=tournament, **team_data) for team_data in teams_data]
+        Team.objects.bulk_create(teams)
         return tournament
-
-
