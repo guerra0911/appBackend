@@ -107,10 +107,11 @@ class BracketSerializer(serializers.ModelSerializer):
 
 class TournamentSerializer(serializers.ModelSerializer):
     teams = TeamSerializer(many=True, required=False)
+    predicted_brackets = BracketSerializer(many=True, read_only=True)
 
     class Meta:
         model = Tournament
-        fields = ['id', 'name', 'banner', 'logo', 'point_system', 'correct_score_bonus', 'winner_reward', 'loser_forfeit', 'teams', 'author']
+        fields = ['id', 'name', 'banner', 'logo', 'point_system', 'correct_score_bonus', 'winner_reward', 'loser_forfeit', 'teams', 'author', 'predicted_brackets']
 
     def create(self, validated_data):
         teams_data = validated_data.pop('teams', [])

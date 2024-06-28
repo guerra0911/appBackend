@@ -18,5 +18,5 @@ urlpatterns = [
     path("api/tournaments/create/", CreateTournamentView.as_view(), name="create-tournament"),
     path("api/tournaments/", TournamentViewSet.as_view({'get': 'list'}), name="tournament-list"),
     path("api/tournaments/<int:pk>/", TournamentViewSet.as_view({'get': 'retrieve'}), name="tournament-detail"),
+    path("api/tournaments/<int:pk>/submit_prediction/", TournamentViewSet.as_view({'post': 'submit_prediction'}), name="submit-prediction"),
 ]
-

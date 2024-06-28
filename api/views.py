@@ -8,6 +8,8 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.decorators import api_view
+from rest_framework.decorators import action
+from rest_framework.response import Response
 from django.db.models import Count
 
 import logging
@@ -135,6 +137,59 @@ class BracketViewSet(viewsets.ModelViewSet):
 class TournamentViewSet(viewsets.ModelViewSet):
     queryset = Tournament.objects.all()
     serializer_class = TournamentSerializer
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
+    def submit_prediction(self, request, pk=None):
+        user = request.user
+        data = request.data
+        tournament_id = data.get('tournament_id')
+
+        if not tournament_id:
+            return Response({'error': 'Tournament ID is required'}, status=400)
+
+        try:
+            tournament = Tournament.objects.get(id=tournament_id)
+        except Tournament.DoesNotExist:
+            return Response({'error': 'Tournament not found'}, status=404)
+
+        # Check if the user already has a prediction for this tournament
+        bracket, created = Bracket.objects.get_or_create(
+            author=user,
+            tournament=tournament,
+            defaults={'author': user, 'tournament': tournament}
+        )
+        
+        # If bracket already exists, clear its many-to-many fields
+        if not created:
+            bracket.left_side_round_of_16_teams.clear()
+            bracket.left_side_quarter_finals.clear()
+            bracket.left_side_semi_finals.clear()
+            bracket.right_side_round_of_16_teams.clear()
+            bracket.right_side_quarter_finals.clear()
+            bracket.right_side_semi_finals.clear()
+            bracket.finals.clear()
+
+        # Helper function to extract IDs from the team objects
+        def get_team_ids(team_list):
+            return [team['id'] for team in team_list if team]
+
+        # Set the new prediction data
+        bracket.left_side_round_of_16_teams.set(get_team_ids(data.get('left_side_round_of_16_teams', [])))
+        bracket.left_side_quarter_finals.set(get_team_ids(data.get('left_side_quarter_finals', [])))
+        bracket.left_side_semi_finals.set(get_team_ids(data.get('left_side_semi_finals', [])))
+        bracket.right_side_round_of_16_teams.set(get_team_ids(data.get('right_side_round_of_16_teams', [])))
+        bracket.right_side_quarter_finals.set(get_team_ids(data.get('right_side_quarter_finals', [])))
+        bracket.right_side_semi_finals.set(get_team_ids(data.get('right_side_semi_finals', [])))
+        bracket.finals.set(get_team_ids(data.get('finals', [])))
+        
+        winner_id = data.get('winner')
+        if winner_id:
+            bracket.winner_id = winner_id
+
+        bracket.save()
+
+        return Response({'status': 'prediction submitted', 'bracket': BracketSerializer(bracket).data})
+
     
 class CreateTournamentView(APIView):
     parser_classes = (MultiPartParser, FormParser)
