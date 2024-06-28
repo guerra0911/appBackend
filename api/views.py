@@ -11,6 +11,7 @@ from rest_framework.decorators import api_view
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db.models import Count
+from django.db import transaction
 
 import logging
 
@@ -134,6 +135,74 @@ class BracketViewSet(viewsets.ModelViewSet):
     queryset = Bracket.objects.all()
     serializer_class = BracketSerializer
 
+class CreateTournamentView(APIView):
+    parser_classes = (MultiPartParser, FormParser)
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        data = request.data.dict()
+        teams_data = []
+
+        for key, value in data.items():
+            if key.startswith('teams['):
+                index = int(key.split('[')[1].split(']')[0])
+                field_name = key.split('][')[1][:-1]
+
+                while len(teams_data) <= index:
+                    teams_data.append({})
+
+                teams_data[index][field_name] = value
+
+        data['teams'] = teams_data
+        serializer = TournamentSerializer(data=data)
+
+        if serializer.is_valid():
+            with transaction.atomic():
+                tournament = serializer.save(author=request.user)
+
+                # Create and save teams
+                teams = []
+                for team_data in teams_data:
+                    team = Team.objects.create(tournament=tournament, **team_data)
+                    teams.append(team)
+
+                # Create actual bracket
+                actual_bracket = Bracket.objects.create(
+                    author=request.user,
+                    tournament=tournament,
+                    is_actual=True
+                )
+
+                # Initialize lists with None values
+                left_side_round_of_16_teams = [None] * 8
+                right_side_round_of_16_teams = [None] * 8
+
+                # Assign teams to the initialized lists
+                for i, team in enumerate(teams[:8]):
+                    left_side_round_of_16_teams[i] = {
+                        "id": team.id,
+                        "name": team.name,
+                        "logo": team.logo.url
+                    }
+                for i, team in enumerate(teams[8:16]):
+                    right_side_round_of_16_teams[i] = {
+                        "id": team.id,
+                        "name": team.name,
+                        "logo": team.logo.url
+                    }
+
+                # Assign lists to actual bracket JSON fields
+                actual_bracket.left_side_round_of_16_teams = left_side_round_of_16_teams
+                actual_bracket.right_side_round_of_16_teams = right_side_round_of_16_teams
+
+                actual_bracket.save()
+                tournament.actual_bracket = actual_bracket
+                tournament.save()
+
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        else:
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 class TournamentViewSet(viewsets.ModelViewSet):
     queryset = Tournament.objects.all()
     serializer_class = TournamentSerializer
@@ -142,10 +211,7 @@ class TournamentViewSet(viewsets.ModelViewSet):
     def submit_prediction(self, request, pk=None):
         user = request.user
         data = request.data
-        tournament_id = data.get('tournament_id')
-
-        if not tournament_id:
-            return Response({'error': 'Tournament ID is required'}, status=400)
+        tournament_id = pk
 
         try:
             tournament = Tournament.objects.get(id=tournament_id)
@@ -156,32 +222,28 @@ class TournamentViewSet(viewsets.ModelViewSet):
         bracket, created = Bracket.objects.get_or_create(
             author=user,
             tournament=tournament,
-            defaults={'author': user, 'tournament': tournament}
+            is_actual=False  # Ensure we are not touching the actual bracket
         )
-        
-        # If bracket already exists, clear its many-to-many fields
-        if not created:
-            bracket.left_side_round_of_16_teams.clear()
-            bracket.left_side_quarter_finals.clear()
-            bracket.left_side_semi_finals.clear()
-            bracket.right_side_round_of_16_teams.clear()
-            bracket.right_side_quarter_finals.clear()
-            bracket.right_side_semi_finals.clear()
-            bracket.finals.clear()
 
-        # Helper function to extract IDs from the team objects
-        def get_team_ids(team_list):
-            return [team['id'] for team in team_list if team]
+        # Helper function to extract team data
+        def get_team_data(team_list):
+            return [
+                {
+                    "id": team['id'],
+                    "name": team['name'],
+                    "logo": team['logo']
+                } if team else None for team in team_list
+            ]
 
         # Set the new prediction data
-        bracket.left_side_round_of_16_teams.set(get_team_ids(data.get('left_side_round_of_16_teams', [])))
-        bracket.left_side_quarter_finals.set(get_team_ids(data.get('left_side_quarter_finals', [])))
-        bracket.left_side_semi_finals.set(get_team_ids(data.get('left_side_semi_finals', [])))
-        bracket.right_side_round_of_16_teams.set(get_team_ids(data.get('right_side_round_of_16_teams', [])))
-        bracket.right_side_quarter_finals.set(get_team_ids(data.get('right_side_quarter_finals', [])))
-        bracket.right_side_semi_finals.set(get_team_ids(data.get('right_side_semi_finals', [])))
-        bracket.finals.set(get_team_ids(data.get('finals', [])))
-        
+        bracket.left_side_round_of_16_teams = get_team_data(data.get('left_side_round_of_16_teams', []))
+        bracket.left_side_quarter_finals = get_team_data(data.get('left_side_quarter_finals', []))
+        bracket.left_side_semi_finals = get_team_data(data.get('left_side_semi_finals', []))
+        bracket.right_side_round_of_16_teams = get_team_data(data.get('right_side_round_of_16_teams', []))
+        bracket.right_side_quarter_finals = get_team_data(data.get('right_side_quarter_finals', []))
+        bracket.right_side_semi_finals = get_team_data(data.get('right_side_semi_finals', []))
+        bracket.finals = get_team_data(data.get('finals', []))
+
         winner_id = data.get('winner')
         if winner_id:
             bracket.winner_id = winner_id
@@ -191,36 +253,70 @@ class TournamentViewSet(viewsets.ModelViewSet):
         # Ensure the bracket is associated with the tournament's predicted_brackets
         tournament.predicted_brackets.add(bracket)
         tournament.save()
-        
+
         return Response({'status': 'prediction submitted', 'bracket': BracketSerializer(bracket).data})
 
-    
-class CreateTournamentView(APIView):
-    parser_classes = (MultiPartParser, FormParser)
-    permission_classes = [IsAuthenticated]
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
+    def update_actual_bracket(self, request, pk=None):
+        user = request.user
+        data = request.data
+        try:
+            tournament = Tournament.objects.get(id=pk)
+        except Tournament.DoesNotExist:
+            return Response({'error': 'Tournament not found'}, status=404)
 
-    def post(self, request, *args, **kwargs):
-        data = request.data.dict()  # Convert QueryDict to regular dict
-        teams_data = []
-        
-        for key, value in data.items():
-            if key.startswith('teams['):
-                index = int(key.split('[')[1].split(']')[0])
-                field_name = key.split('][')[1][:-1]
-                
-                while len(teams_data) <= index:
-                    teams_data.append({})
-                
-                teams_data[index][field_name] = value
-        
-        data['teams'] = teams_data
-        serializer = TournamentSerializer(data=data)
+        if tournament.author != user:
+            return Response({'error': 'Only the creator can update the actual bracket'}, status=403)
 
-        if serializer.is_valid():
-            tournament = serializer.save(author=request.user)
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        else:
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        actual_bracket = tournament.actual_bracket
+
+        # Directly assign the lists to the JSON fields
+        actual_bracket.left_side_round_of_16_teams = data.get('left_side_round_of_16_teams', [])
+        actual_bracket.left_side_quarter_finals = data.get('left_side_quarter_finals', [])
+        actual_bracket.left_side_semi_finals = data.get('left_side_semi_finals', [])
+        actual_bracket.right_side_round_of_16_teams = data.get('right_side_round_of_16_teams', [])
+        actual_bracket.right_side_quarter_finals = data.get('right_side_quarter_finals', [])
+        actual_bracket.right_side_semi_finals = data.get('right_side_semi_finals', [])
+        actual_bracket.finals = data.get('finals', [])
+
+        winner_id = data.get('winner')
+        if winner_id:
+            actual_bracket.winner_id = winner_id
+
+        actual_bracket.save()
+
+        return Response({'status': 'actual bracket updated', 'bracket': BracketSerializer(actual_bracket).data})
+
+
+    def update_predicted_bracket_scores(self, tournament): # self.update_predicted_bracket_scores(tournament)
+        actual_bracket = tournament.actual_bracket
+        point_system = tournament.point_system
+        correct_score_bonus = tournament.correct_score_bonus
+
+        for predicted_bracket in tournament.predicted_brackets.all():
+            score = 0
+
+            rounds = [
+                ('left_side_round_of_16_teams', 0),
+                ('right_side_round_of_16_teams', 0),
+                ('left_side_quarter_finals', 1),
+                ('right_side_quarter_finals', 1),
+                ('left_side_semi_finals', 2),
+                ('right_side_semi_finals', 2),
+                ('finals', 3)
+            ]
+
+            for round_name, round_index in rounds:
+                actual_teams = getattr(actual_bracket, round_name).all()
+                predicted_teams = getattr(predicted_bracket, round_name).all()
+                score += sum(1 for team in predicted_teams if team in actual_teams) * point_system[round_index]
+
+            if actual_bracket.winner == predicted_bracket.winner:
+                score += correct_score_bonus
+
+            predicted_bracket.score = score
+            predicted_bracket.save()
+
         
 @api_view(['POST'])
 def like_post(request, note_id):

@@ -6,6 +6,7 @@ from django.dispatch import receiver
 from storages.backends.s3boto3 import S3Boto3Storage
 from django.db.models import Count
 import logging
+from django.contrib.postgres.fields import JSONField
 
 logger = logging.getLogger(__name__)
 
@@ -65,21 +66,25 @@ class Team(models.Model):
     def __str__(self):
         return self.name
 
+from django.db import models
+
 class Bracket(models.Model):
     author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     tournament = models.ForeignKey('Tournament', related_name='brackets', on_delete=models.CASCADE)
     is_actual = models.BooleanField(default=False)
-    left_side_round_of_16_teams = models.ManyToManyField(Team, related_name='left_round_of_16', blank=True)
-    left_side_quarter_finals = models.ManyToManyField(Team, related_name='left_quarter_finals', blank=True)
-    left_side_semi_finals = models.ManyToManyField(Team, related_name='left_semi_finals', blank=True)
-    finals = models.ManyToManyField(Team, related_name='finals', blank=True)
-    right_side_semi_finals = models.ManyToManyField(Team, related_name='right_semi_finals', blank=True)
-    right_side_quarter_finals = models.ManyToManyField(Team, related_name='right_quarter_finals', blank=True)
-    right_side_round_of_16_teams = models.ManyToManyField(Team, related_name='right_round_of_16', blank=True)
+    left_side_round_of_16_teams = models.JSONField(default=list, blank=True)
+    left_side_quarter_finals = models.JSONField(default=list, blank=True)
+    left_side_semi_finals = models.JSONField(default=list, blank=True)
+    finals = models.JSONField(default=list, blank=True)
+    right_side_semi_finals = models.JSONField(default=list, blank=True)
+    right_side_quarter_finals = models.JSONField(default=list, blank=True)
+    right_side_round_of_16_teams = models.JSONField(default=list, blank=True)
     winner = models.ForeignKey(Team, related_name='winner', on_delete=models.SET_NULL, null=True, blank=True)
+    score = models.IntegerField(default=0)
 
     def __str__(self):
         return f"Bracket by {self.author.username}"
+
 
 class Tournament(models.Model):
     author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
