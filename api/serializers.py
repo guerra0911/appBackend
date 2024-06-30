@@ -93,6 +93,7 @@ class TeamSerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'logo']
 
 class BracketSerializer(serializers.ModelSerializer):
+    author = UserSerializer(read_only=True)
     left_side_round_of_16_teams = serializers.ListField(
         child=serializers.DictField(allow_null=True), required=False
     )
