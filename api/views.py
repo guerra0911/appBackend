@@ -56,15 +56,15 @@ class UpdateUserProfileView(APIView):
     def put(self, request):
         user = request.user
         data = request.data
-        print("Received data: %s", data)  # Debug log
+        print("Received data:", data)  # Debug log
 
         serializer = UserSerializer(user, data=data, partial=True)
         if serializer.is_valid():
             serializer.save()
-            print("Profile updated for user: %s", user.id)  # Debug log
+            print("Profile updated for user:", user.id)  # Debug log
             return Response(serializer.data, status=200)
         else:
-            print("Error updating profile: %s", serializer.errors)  # Debug log
+            print("Error updating profile:", serializer.errors)  # Debug log
             return Response(serializer.errors, status=400)
 
 

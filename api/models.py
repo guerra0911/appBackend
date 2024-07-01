@@ -7,6 +7,7 @@ from storages.backends.s3boto3 import S3Boto3Storage
 from django.db.models import Count
 import logging
 from django.contrib.postgres.fields import JSONField
+from django.core.validators import EmailValidator
 
 logger = logging.getLogger(__name__)
 
@@ -28,9 +29,18 @@ class Note(models.Model):
 
 class Profile(models.Model):
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    bio = models.TextField(blank=True)
+    location = models.CharField(max_length=100, blank=True)
+    birthday = models.DateField(null=True, blank=True)
+    spotify_url = models.URLField(max_length=200, blank=True)
+    imdb_url = models.URLField(max_length=200, blank=True)
+    website_url = models.URLField(max_length=200, blank=True)
+    privacy_flag = models.BooleanField(default=False)
+    notification_flag = models.BooleanField(default=True)
     rating = models.IntegerField(default=0)
     following = models.ManyToManyField('self', related_name='followers', symmetrical=False, blank=True)
     image = models.ImageField(upload_to='profile_pics', default='profile_pics/default.jpg')
+    email = models.EmailField(max_length=254, validators=[EmailValidator()], blank=True)
 
     def update_profile(self, username=None, image=None):
         if username:
@@ -39,7 +49,7 @@ class Profile(models.Model):
         if image:
             self.image = image
             self.save()
-    
+
     def calculate_rating(self):
         likes_count = Note.objects.filter(author=self.user).aggregate(total_likes=Count('likes'))['total_likes']
         dislikes_count = Note.objects.filter(author=self.user).aggregate(total_dislikes=Count('dislikes'))['total_dislikes']

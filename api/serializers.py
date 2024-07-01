@@ -8,12 +8,12 @@ import os
 class ProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = Profile
-        fields = ['rating', 'following', 'image']
+        fields = ['bio', 'location', 'birthday', 'spotify_url', 'imdb_url', 'website_url', 'privacy_flag', 'notification_flag', 'rating', 'following', 'image', 'email']
 
 class UserSerializer(serializers.ModelSerializer):
     profile = ProfileSerializer(required=False)
     confirm_password = serializers.CharField(write_only=True, required=False)
-    
+
     class Meta:
         model = User
         fields = ['id', 'username', 'password', 'confirm_password', 'profile']
@@ -55,18 +55,9 @@ class UserSerializer(serializers.ModelSerializer):
         instance.save()
 
         if profile_data:
-            profile = instance.profile
-            if 'image' in profile_data:
-                profile.image = profile_data['image']
-            profile.save()
-
-            # Print image details without using `path`
-            if 'image' in profile_data:
-                print("Profile image updated to:", profile.image.url)
-                print("Image details - Name:", profile.image.name)
-                print("Image details - Size:", profile.image.size)
-
+            Profile.objects.update_or_create(user=instance, defaults=profile_data)
         return instance
+
     
 class CommentSerializer(serializers.ModelSerializer):
     author = serializers.ReadOnlyField(source='author.username')
