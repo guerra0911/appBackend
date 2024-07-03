@@ -17,12 +17,18 @@ class Comment(models.Model):
     content = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
 
+def note_image_upload_path(instance, filename):
+    return f'post_pics/{instance.id}/{filename}'
+
 class Note(models.Model):
     content = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
     author = models.ForeignKey(User, on_delete=models.CASCADE, related_name="notes")
     likes = models.ManyToManyField(User, related_name='liked_notes', default=0)
     dislikes = models.ManyToManyField(User, related_name='disliked_notes', default=0)
+    image1 = models.ImageField(upload_to=note_image_upload_path, null=True, blank=True)
+    image2 = models.ImageField(upload_to=note_image_upload_path, null=True, blank=True)
+    image3 = models.ImageField(upload_to=note_image_upload_path, null=True, blank=True)
 
     def __str__(self):
         return f"Note by {self.author.username} on {self.created_at}"

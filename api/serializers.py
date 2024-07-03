@@ -75,7 +75,7 @@ class NoteSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Note
-        fields = ["id", "content", "created_at", "author","likes", "dislikes", "comments"]
+        fields = ['id', 'content', 'created_at', 'author', 'likes', 'dislikes', 'image1', 'image2', 'image3', 'comments']
         extra_kwargs = {"author": {"read_only": True}}
 
 class TeamSerializer(serializers.ModelSerializer):

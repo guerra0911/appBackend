@@ -75,10 +75,15 @@ class NoteListCreate(generics.ListCreateAPIView):
     def get_queryset(self):
         user = self.request.user
         return Note.objects.filter(author=user)
-    
+
     def perform_create(self, serializer):
         if serializer.is_valid():
-            serializer.save(author=self.request.user)
+            note = serializer.save(author=self.request.user)
+            images = self.request.FILES.getlist('images')
+            if images:
+                for idx, image in enumerate(images):
+                    setattr(note, f'image{idx + 1}', image)
+                note.save()
         else:
             print(serializer.errors)
             
