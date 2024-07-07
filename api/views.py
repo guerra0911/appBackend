@@ -48,7 +48,6 @@ class UserProfileView(APIView):
         except User.DoesNotExist:
             return Response({'error': 'User not found'}, status=404)
         
-# views.py
 class UpdateUserProfileView(APIView):
     parser_classes = (MultiPartParser, FormParser,)
     permission_classes = [IsAuthenticated]
@@ -56,18 +55,89 @@ class UpdateUserProfileView(APIView):
     def put(self, request):
         user = request.user
         data = request.data
-        print("Received data:", data)  # Debug log
-
+        profile_data = data.get('profile', {})
+        
+        # If the profile is made public, accept all follow requests
+        if 'privacy_flag' in profile_data and profile_data['privacy_flag'] == False:
+            profile = user.profile
+            for follower in profile.follow_requests.all():
+                profile.followers.add(follower)
+                follower.following.add(profile)
+            profile.follow_requests.clear()
+        
         serializer = UserSerializer(user, data=data, partial=True)
         if serializer.is_valid():
             serializer.save()
-            print("Profile updated for user:", user.id)  # Debug log
-            return Response(serializer.data, status=200)
-        else:
-            print("Error updating profile:", serializer.errors)  # Debug log
-            return Response(serializer.errors, status=400)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+class FollowView(APIView):
+    permission_classes = [IsAuthenticated]
 
+    def post(self, request, user_id):
+        try:
+            to_follow = User.objects.get(id=user_id)
+            current_user = request.user
 
+            if to_follow.profile.privacy_flag:
+                to_follow.profile.requests.add(current_user)
+                current_user.profile.requesting.add(to_follow)
+                return Response({'status': 'request_sent'}, status=status.HTTP_200_OK)
+            else:
+                to_follow.profile.followers.add(current_user)
+                current_user.profile.following.add(to_follow)
+                return Response({'status': 'following'}, status=status.HTTP_200_OK)
+        except User.DoesNotExist:
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+ 
+class UnfollowView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, user_id):
+        try:
+            to_unfollow = User.objects.get(id=user_id)
+            current_user = request.user
+
+            if to_unfollow in current_user.profile.following.all() and current_user in to_unfollow.profile.followers.all():
+                current_user.profile.following.remove(to_unfollow)
+                to_unfollow.profile.followers.remove(current_user)
+                return Response({'status': 'unfollowed'}, status=status.HTTP_200_OK)
+            return Response({'error': 'not_following'}, status=status.HTTP_400_BAD_REQUEST)
+        except User.DoesNotExist:
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+class AcceptFollowRequestView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, user_id):
+        try:
+            current_profile = request.user.profile
+            follower = User.objects.get(id=user_id).profile
+
+            if follower in current_profile.follow_requests.all():
+                current_profile.follow_requests.remove(follower)
+                current_profile.followers.add(follower)
+                follower.following.add(current_profile)
+                return Response({'status': 'accepted'}, status=status.HTTP_200_OK)
+            return Response({'error': 'request_not_found'}, status=status.HTTP_400_BAD_REQUEST)
+        except User.DoesNotExist:
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+
+class DeclineFollowRequestView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, user_id):
+        try:
+            current_profile = request.user.profile
+            follower = User.objects.get(id=user_id).profile
+
+            if follower in current_profile.follow_requests.all():
+                current_profile.follow_requests.remove(follower)
+                return Response({'status': 'declined'}, status=status.HTTP_200_OK)
+            return Response({'error': 'request_not_found'}, status=status.HTTP_400_BAD_REQUEST)
+        except User.DoesNotExist:
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+        
 class NoteListCreate(generics.ListCreateAPIView):
     serializer_class = NoteSerializer
     permission_classes = [IsAuthenticated]

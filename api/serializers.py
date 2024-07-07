@@ -6,10 +6,16 @@ import uuid
 import os
 
 class ProfileSerializer(serializers.ModelSerializer):
+    followers = serializers.StringRelatedField(many=True, read_only=True)
+    following = serializers.StringRelatedField(many=True, read_only=True)
+    requests = serializers.StringRelatedField(many=True, read_only=True)
+    requesting = serializers.StringRelatedField(many=True, read_only=True)
+
     class Meta:
         model = Profile
-        fields = ['bio', 'location', 'birthday', 'spotify_url', 'imdb_url', 'website_url', 'privacy_flag', 'notification_flag', 'rating', 'following', 'image', 'email']
+        fields = ['bio', 'location', 'birthday', 'spotify_url', 'imdb_url', 'website_url', 'privacy_flag', 'notification_flag', 'rating', 'following', 'followers', 'requests', 'requesting', 'image', 'email']
 
+    
 class UserSerializer(serializers.ModelSerializer):
     profile = ProfileSerializer(required=False)
     confirm_password = serializers.CharField(write_only=True, required=False)

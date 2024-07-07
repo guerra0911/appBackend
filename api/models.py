@@ -44,7 +44,10 @@ class Profile(models.Model):
     privacy_flag = models.BooleanField(default=False)
     notification_flag = models.BooleanField(default=True)
     rating = models.IntegerField(default=0)
-    following = models.ManyToManyField('self', related_name='followers', symmetrical=False, blank=True)
+    followers = models.ManyToManyField(User, related_name='followers_profiles', default=0)
+    following = models.ManyToManyField(User, related_name='following_profiles', default=0)
+    requests = models.ManyToManyField(User, related_name='requests_profiles', default=0)
+    requesting = models.ManyToManyField(User, related_name='requesting_notes', default=0)
     image = models.ImageField(upload_to='profile_pics', default='profile_pics/default.jpg')
     email = models.EmailField(max_length=254, validators=[EmailValidator()], blank=True)
 
