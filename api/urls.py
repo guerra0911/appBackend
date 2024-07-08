@@ -11,4 +11,6 @@ urlpatterns = [
     path("notes/<int:note_id>/dislike/", views.dislike_post, name="dislike-post"),
     path("notes/<int:note_id>/liked_by/", views.liked_by, name='liked-by'),
     path("notes/<int:note_id>/disliked_by/", views.disliked_by, name='disliked-by'),
+    path("profile/<int:profile_id>/followed_by/", views.followed_by, name='followed-by'),
+    path("profile/<int:profile_id>/following/", views.following, name='following'),
 ]

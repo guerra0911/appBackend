@@ -13,7 +13,7 @@ class ProfileSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Profile
-        fields = ['bio', 'location', 'birthday', 'spotify_url', 'imdb_url', 'website_url', 'privacy_flag', 'notification_flag', 'rating', 'following', 'followers', 'requests', 'requesting', 'image', 'email']
+        fields = ['id', 'bio', 'location', 'birthday', 'spotify_url', 'imdb_url', 'website_url', 'privacy_flag', 'notification_flag', 'rating', 'following', 'followers', 'requests', 'requesting', 'image', 'email']
 
     
 class UserSerializer(serializers.ModelSerializer):
