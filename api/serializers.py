@@ -30,6 +30,8 @@ class UserSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 "Username must be between 1 and 25 characters and can only contain letters, numbers, periods, and underscores."
             )
+        if User.objects.filter(username__iexact=value).exists():
+            raise serializers.ValidationError("A user with that username already exists.")
         return value
 
     def validate_password(self, value):
