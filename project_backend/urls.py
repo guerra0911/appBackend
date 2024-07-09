@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.urls import path, include
-from api.views import CreateUserView, CurrentUserView, UpdateUserProfileView, UserProfileView, CreateTournamentView, TournamentViewSet, FollowView, UnfollowView, AcceptFollowRequestView, DeclineFollowRequestView, UnRequestView, requested_by, requesting, blocked_by, blocking
+from api.views import CreateUserView, CurrentUserView, UpdateUserProfileView, UserProfileView, CreateTournamentView, TournamentViewSet, FollowView, UnfollowView, AcceptFollowRequestView, DeclineFollowRequestView, UnRequestView, BlockView, UnblockView, requested_by, requesting, blocked_by, blocking
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from django.conf import settings
 from django.conf.urls.static import static
@@ -24,6 +24,8 @@ urlpatterns = [
     path('api/user/decline_follow/<int:user_id>/', DeclineFollowRequestView.as_view(), name='decline_follow_request'),
     path('api/user/unfollow/<int:user_id>/', UnfollowView.as_view(), name='unfollow'),
     path('api/user/unrequest/<int:user_id>/', UnRequestView.as_view(), name='unrequest'),
+    path('api/user/unblock/<int:user_id>/', UnblockView.as_view(), name='unblock'),
+    path('api/user/block/<int:user_id>/', BlockView.as_view(), name='block'),
     path("api/tournaments/create/", CreateTournamentView.as_view(), name="create-tournament"),
     path("api/tournaments/", TournamentViewSet.as_view({'get': 'list'}), name="tournament-list"),
     path("api/tournaments/<int:pk>/", TournamentViewSet.as_view({'get': 'retrieve'}), name="tournament-detail"),
