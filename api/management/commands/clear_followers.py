@@ -11,5 +11,7 @@ class Command(BaseCommand):
             profile.following.clear()
             profile.requests.clear()
             profile.requesting.clear()
+            profile.blocking.clear()
+            profile.blocked_by.clear()
             profile.save()
         self.stdout.write(self.style.SUCCESS('Successfully cleared all relationships'))

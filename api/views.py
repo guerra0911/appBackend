@@ -122,7 +122,7 @@ class UnRequestView(APIView):
         except User.DoesNotExist:
             return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
         
-class AcceptFollowRequestView(APIView):
+class AcceptFollowRequestView(APIView): #Called From Current User
     permission_classes = [IsAuthenticated]
 
     def post(self, request, user_id):
@@ -132,6 +132,7 @@ class AcceptFollowRequestView(APIView):
             
             if to_accept in current_user.profile.requests.all():
                 current_user.profile.requests.remove(to_accept)
+                to_accept.profile.requesting.remove(current_user)
                 current_user.profile.followers.add(to_accept)
                 to_accept.profile.following.add(current_user)
                 return Response({'status': 'accepted'}, status=status.HTTP_200_OK)
@@ -149,7 +150,53 @@ class DeclineFollowRequestView(APIView):
             
             if to_decline in current_user.profile.requests.all():
                 current_user.profile.requests.remove(to_decline)
+                to_decline.profile.requesting.remove(current_user)
+                return Response({'status': 'declined'}, status=status.HTTP_200_OK)
             return Response({'error': 'request_not_found'}, status=status.HTTP_400_BAD_REQUEST)
+        except User.DoesNotExist:
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+
+class BlockView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, user_id):
+        try:
+            to_block = User.objects.get(id=user_id)
+            current_user = request.user
+
+            if to_block in current_user.profile.following.all():
+                current_user.profile.following.remove(to_block)
+                to_block.profile.followers.remove(current_user)
+            if to_block in current_user.profile.followers.all():
+                current_user.profile.followers.remove(to_block)
+                to_block.profile.following.remove(current_user)
+            if to_block in current_user.profile.requests.all():
+                current_user.profile.requests.remove(to_block)
+                to_block.profile.requesting.remove(current_user)
+            if to_block in current_user.profile.requesting.all():
+                current_user.profile.requesting.remove(to_block)
+                to_block.profile.requests.remove(current_user)
+            
+            current_user.profile.blocking.add(to_block)
+            to_block.profile.blocked_by.add(current_user)
+               
+            return Response({'status': 'user blocked'}, status=status.HTTP_200_OK)
+        except User.DoesNotExist:
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+ 
+class UnblockView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, user_id):
+        try:
+            to_unblock = User.objects.get(id=user_id)
+            current_user = request.user
+
+            if to_unblock in current_user.profile.blocking.all() and current_user in to_unblock.profile.blocked_by.all():
+                current_user.profile.blocking.remove(to_unblock)
+                to_unblock.profile.blocked_by.remove(current_user)
+                return Response({'status': 'unblocked'}, status=status.HTTP_200_OK)
+            return Response({'error': 'not_blocking'}, status=status.HTTP_400_BAD_REQUEST)
         except User.DoesNotExist:
             return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
         
@@ -550,7 +597,7 @@ def followed_by(request, profile_id):
         serializer = UserSerializer(users, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
     except Profile.DoesNotExist:
-        return Response({'error': 'Note not found'}, status=status.HTTP_404_NOT_FOUND)
+        return Response({'error': 'Profile not found'}, status=status.HTTP_404_NOT_FOUND)
 
 @api_view(['GET'])
 def following(request, profile_id):
@@ -560,7 +607,7 @@ def following(request, profile_id):
         serializer = UserSerializer(users, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
     except Profile.DoesNotExist:
-        return Response({'error': 'Note not found'}, status=status.HTTP_404_NOT_FOUND)
+        return Response({'error': 'Profile not found'}, status=status.HTTP_404_NOT_FOUND)
 
 @api_view(['GET'])
 def requested_by(request):
@@ -570,7 +617,7 @@ def requested_by(request):
         serializer = UserSerializer(users, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
     except Profile.DoesNotExist:
-        return Response({'error': 'Note not found'}, status=status.HTTP_404_NOT_FOUND)
+        return Response({'error': 'Profile not found'}, status=status.HTTP_404_NOT_FOUND)
 
 @api_view(['GET'])
 def requesting(request):
@@ -580,4 +627,24 @@ def requesting(request):
         serializer = UserSerializer(users, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
     except Profile.DoesNotExist:
-        return Response({'error': 'Note not found'}, status=status.HTTP_404_NOT_FOUND)
+        return Response({'error': 'Profile not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+@api_view(['GET'])
+def blocked_by(request):
+    try:
+        user = request.user
+        users = user.profile.blocked_by.all()
+        serializer = UserSerializer(users, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    except Profile.DoesNotExist:
+        return Response({'error': 'Profile not found'}, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(['GET'])
+def blocking(request):
+    try:
+        user = request.user
+        users = user.profile.blocking.all()
+        serializer = UserSerializer(users, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    except Profile.DoesNotExist:
+        return Response({'error': 'Profile not found'}, status=status.HTTP_404_NOT_FOUND)

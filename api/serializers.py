@@ -10,10 +10,12 @@ class ProfileSerializer(serializers.ModelSerializer):
     following = serializers.StringRelatedField(many=True, read_only=True)
     requests = serializers.StringRelatedField(many=True, read_only=True)
     requesting = serializers.StringRelatedField(many=True, read_only=True)
+    blocked_by = serializers.StringRelatedField(many=True, read_only=True)
+    blocking = serializers.StringRelatedField(many=True, read_only=True)
 
     class Meta:
         model = Profile
-        fields = ['id', 'bio', 'location', 'birthday', 'spotify_url', 'imdb_url', 'website_url', 'privacy_flag', 'notification_flag', 'rating', 'following', 'followers', 'requests', 'requesting', 'image', 'email']
+        fields = ['id', 'bio', 'location', 'birthday', 'spotify_url', 'imdb_url', 'website_url', 'privacy_flag', 'notification_flag', 'rating', 'following', 'followers', 'requests', 'requesting', 'image', 'email', 'blocked_by', 'blocking']
 
     
 class UserSerializer(serializers.ModelSerializer):

@@ -48,6 +48,8 @@ class Profile(models.Model):
     following = models.ManyToManyField(User, related_name='following_profiles', default=0)
     requests = models.ManyToManyField(User, related_name='requests_profiles', default=0)
     requesting = models.ManyToManyField(User, related_name='requesting_notes', default=0)
+    blocked_by = models.ManyToManyField(User, related_name='blocked_by', default=0)
+    blocking = models.ManyToManyField(User, related_name='blocking', default=0)
     image = models.ImageField(upload_to='profile_pics', default='profile_pics/default.jpg')
     email = models.EmailField(max_length=254, validators=[EmailValidator()], blank=True)
 
