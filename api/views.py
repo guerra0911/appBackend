@@ -10,7 +10,7 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.decorators import api_view
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from django.db.models import Count
+from django.db.models import Count, Q
 from django.db import transaction
 import json
 
@@ -55,21 +55,33 @@ class UpdateUserProfileView(APIView):
     def put(self, request):
         user = request.user
         data = request.data
-        profile_data = data.get('profile', {})
-        
+
+        # Print the incoming data
+        print("Request data:", data)
+
         # If the profile is made public, accept all follow requests
-        if 'privacy_flag' in profile_data and profile_data['privacy_flag'] == False:
-            profile = user.profile
-            for follower in profile.follow_requests.all():
-                profile.followers.add(follower)
-                follower.following.add(profile)
-            profile.follow_requests.clear()
-        
+        if 'profile.privacy_flag' in data and data['profile.privacy_flag'] == 'false':
+            for requester in user.profile.requests.all():
+                print(requester)
+                requester.profile.requesting.remove(user)
+                requester.profile.following.add(user)
+                user.profile.followers.add(requester)
+            user.profile.requests.clear()
+
+        # Print data before serialization
+        print("Serializer data before validation:", data)
+
         serializer = UserSerializer(user, data=data, partial=True)
         if serializer.is_valid():
             serializer.save()
+            # Print the serialized data after saving
+            print("Serialized data after saving:", serializer.data)
             return Response(serializer.data, status=status.HTTP_200_OK)
+        # Print errors if serializer is not valid
+        print("Serializer errors:", serializer.errors)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
     
 class FollowView(APIView):
     permission_classes = [IsAuthenticated]
@@ -240,13 +252,47 @@ class AllNotesView(generics.ListAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
+        user = self.request.user
         sort_by = self.request.query_params.get('sort_by', 'created_at')
-        if sort_by == 'most_likes':
-            return Note.objects.all().annotate(likes_count=Count('likes')).order_by('-likes_count')
-        elif sort_by == 'most_dislikes':
-            return Note.objects.all().annotate(dislikes_count=Count('dislikes')).order_by('-dislikes_count')
-        return Note.objects.all().order_by('-created_at')
 
+        following_ids = user.profile.following.values_list('id', flat=True)
+        blocking_ids = user.profile.blocking.values_list('id', flat=True)
+        blocked_by_ids = user.profile.blocked_by.values_list('id', flat=True)
+
+        queryset = Note.objects.filter(
+            Q(author__profile__privacy_flag=False) |  # Public profiles
+            Q(author__id__in=following_ids) |         # Followed users
+            Q(author__id=user.id)                     # Current user's posts
+        ).exclude(
+            Q(author__id__in=blocking_ids) |          # Users the current user is blocking
+            Q(author__id__in=blocked_by_ids)          # Users who are blocking the current user
+        )
+
+        if sort_by == 'most_likes':
+            return queryset.annotate(likes_count=Count('likes')).order_by('-likes_count')
+        elif sort_by == 'most_dislikes':
+            return queryset.annotate(dislikes_count=Count('dislikes')).order_by('-dislikes_count')
+
+        return queryset.order_by('-created_at')
+
+class FollowingNotesView(generics.ListAPIView):
+    serializer_class = NoteSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        sort_by = self.request.query_params.get('sort_by', 'created_at')
+        
+        following_ids = user.profile.following.values_list('id', flat=True)
+
+        queryset = Note.objects.filter(author_id__in=following_ids)
+
+        if sort_by == 'most_likes':
+            return queryset.annotate(likes_count=Count('likes')).order_by('-likes_count')
+        elif sort_by == 'most_dislikes':
+            return queryset.annotate(dislikes_count=Count('dislikes')).order_by('-dislikes_count')
+
+        return queryset.order_by('-created_at')
 
 class NoteDelete(generics.DestroyAPIView):
     serializer_class = NoteSerializer
