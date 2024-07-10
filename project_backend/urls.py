@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.urls import path, include
-from api.views import CreateUserView, CurrentUserView, UpdateUserProfileView, UserProfileView, CreateTournamentView, TournamentViewSet, FollowView, UnfollowView, AcceptFollowRequestView, DeclineFollowRequestView, UnRequestView, BlockView, UnblockView, requested_by, requesting, blocked_by, blocking
+from api.views import CreateUserView, CurrentUserView, UpdateUserProfileView, UserProfileView, CreateTournamentView, TournamentViewSet, FollowView, UnfollowView, AcceptFollowRequestView, DeclineFollowRequestView, UnRequestView, BlockView, UnblockView, UserSearchView, requested_by, requesting, blocked_by, blocking
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from django.conf import settings
 from django.conf.urls.static import static
@@ -13,6 +13,7 @@ urlpatterns = [
     path("api-auth/", include("rest_framework.urls")),
     path("api/", include("api.urls")),
     path("api/user/me/", CurrentUserView.as_view(), name="current_user"),
+    path("api/user/search/", UserSearchView.as_view(), name="user_search"),
     path("api/user/me/update/", UpdateUserProfileView.as_view(), name="update_user_profile"),
     path("api/user/me/requests/", requested_by, name="requested-by"),
     path("api/user/me/requesting/", requesting, name="requesting"),

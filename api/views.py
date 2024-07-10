@@ -48,6 +48,17 @@ class UserProfileView(APIView):
         except User.DoesNotExist:
             return Response({'error': 'User not found'}, status=404)
         
+class UserSearchView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        query = request.query_params.get('q', '')
+        if query:
+            users = User.objects.filter(username__icontains=query)[:5]
+            serializer = UserSerializer(users, many=True)
+            return Response(serializer.data)
+        return Response([])
+        
 class UpdateUserProfileView(APIView):
     parser_classes = (MultiPartParser, FormParser,)
     permission_classes = [IsAuthenticated]
