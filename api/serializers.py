@@ -77,52 +77,36 @@ class CommentSerializer(serializers.ModelSerializer):
         fields = ['id', 'note', 'author', 'content', 'created_at']
         extra_kwargs = {'note': {'write_only': True}}
 
-class SimplifiedNoteSerializer(serializers.ModelSerializer):
-    author = UserSerializer(read_only=True)
-    class Meta:
-        model = Note
-        fields = ['id', 'content', 'created_at', 'author']
-        depth = 1
-
-class ChallengeSerializer(serializers.ModelSerializer):
-    original_note = SimplifiedNoteSerializer(read_only=True)
-    challenger_note = SimplifiedNoteSerializer(read_only=True)
-
-    class Meta:
-        model = Challenge
-        fields = ['id', 'original_note', 'challenger_note', 'created_at']
-
-class SubSerializer(serializers.ModelSerializer):
-    original_note = SimplifiedNoteSerializer(read_only=True)
-    sub_note = SimplifiedNoteSerializer(read_only=True)
-
-    class Meta:
-        model = Sub
-        fields = ['id', 'original_note', 'sub_note', 'created_at']
-
 class NoteSerializer(serializers.ModelSerializer):
     author = UserSerializer(read_only=True)
     likes = serializers.StringRelatedField(many=True, read_only=True)
     dislikes = serializers.StringRelatedField(many=True, read_only=True)
     comments = CommentSerializer(many=True, read_only=True)
-    challenges = serializers.SerializerMethodField()
-    subs = serializers.SerializerMethodField()
 
     class Meta:
         model = Note
         fields = [
             'id', 'content', 'created_at', 'author', 'likes', 'dislikes',
             'image1', 'image2', 'image3', 'comments', 'is_challenger', 
-            'is_subber', 'challenges', 'subs'
+            'is_subber'
         ]
-
-    def get_challenges(self, obj):
-        challenges = Challenge.objects.filter(original_note=obj)
-        return ChallengeSerializer(challenges, many=True, context=self.context).data
     
-    def get_subs(self, obj):
-        subs = Sub.objects.filter(original_note=obj)
-        return SubSerializer(subs, many=True, context=self.context).data
+class ChallengeSerializer(serializers.ModelSerializer):
+    original_note = NoteSerializer(read_only=True)
+    challenger_note = NoteSerializer(read_only=True)
+
+    class Meta:
+        model = Challenge
+        fields = ['id', 'original_note', 'challenger_note', 'created_at']
+
+
+class SubSerializer(serializers.ModelSerializer):
+    original_note = NoteSerializer(read_only=True)
+    sub_note = NoteSerializer(read_only=True)
+
+    class Meta:
+        model = Sub
+        fields = ['id', 'original_note', 'sub_note', 'created_at']
 
 
 class TeamSerializer(serializers.ModelSerializer):
