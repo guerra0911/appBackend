@@ -1,16 +1,16 @@
 from django.shortcuts import render
 from django.contrib.auth.models import User
 from rest_framework import generics, status, viewsets
-from .serializers import UserSerializer, NoteSerializer, CommentSerializer, ProfileSerializer, TournamentSerializer, TeamSerializer, BracketSerializer
+from .serializers import UserSerializer, NoteSerializer, CommentSerializer, ProfileSerializer, TournamentSerializer, TeamSerializer, BracketSerializer, ChallengeSerializer, SubSerializer
 from rest_framework.permissions import IsAuthenticated, AllowAny
-from .models import Note, Profile, Comment, Tournament, Team, Bracket
+from .models import Note, Profile, Comment, Tournament, Team, Bracket, Challenge, Sub
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.decorators import api_view
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from django.db.models import Count, Q
+from django.db.models import Count, Q, F
 from django.db import transaction
 import json
 
@@ -241,15 +241,52 @@ class NoteListCreate(generics.ListCreateAPIView):
                 note.save()
         else:
             print(serializer.errors)
-            
-class UserNotesView(generics.ListAPIView):
+
+class CreateChallengeView(generics.CreateAPIView):
+    serializer_class = ChallengeSerializer
+    permission_classes = [IsAuthenticated]
+
+    def perform_create(self, serializer):
+        # The original note being challenged
+        original_note = Note.objects.get(pk=self.request.data['original_note'])
+
+        # The challenger note
+        challenger_note = Note.objects.get(pk=self.request.data['challenger_note'])
+
+        # Save the challenge linking the original and challenger notes
+        serializer.save(original_note=original_note, challenger_note=challenger_note)
+        
+class CreateSubView(generics.CreateAPIView):
+    serializer_class = SubSerializer
+    permission_classes = [IsAuthenticated]
+
+    def perform_create(self, serializer):
+        # The original note being subbed
+        original_note = Note.objects.get(pk=self.request.data['original_note'])
+
+        # The sub note
+        sub_note = Note.objects.get(pk=self.request.data['sub_note'])
+
+        # Save the sub linking the original and sub notes
+        serializer.save(original_note=original_note, sub_note=sub_note)
+
+def get_serializer_for_instance(instance):
+    if isinstance(instance, Note):
+        return NoteSerializer
+    elif isinstance(instance, Challenge):
+        return ChallengeSerializer
+    elif isinstance(instance, Sub):
+        return SubSerializer
+    return NoteSerializer
+   
+class UserNotesView(generics.ListAPIView):  #ProfilePages
     serializer_class = NoteSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         user_id = self.kwargs['user_id']
         sort_by = self.request.query_params.get('sort_by', 'created_at')
-        queryset = Note.objects.filter(author_id=user_id)
+        queryset = Note.objects.filter(author_id=user_id, is_challenger=False, is_subber=False)
         
         if sort_by == 'most_likes':
             return queryset.annotate(likes_count=Count('likes')).order_by('-likes_count')
@@ -257,8 +294,112 @@ class UserNotesView(generics.ListAPIView):
             return queryset.annotate(dislikes_count=Count('dislikes')).order_by('-dislikes_count')
         
         return queryset.order_by('-created_at')
+    
+class UserChallengesView(generics.ListAPIView):
+    serializer_class = ChallengeSerializer
+    permission_classes = [IsAuthenticated]
 
-class AllNotesView(generics.ListAPIView):
+    def get_queryset(self):
+        user_id = self.kwargs['user_id']
+        sort_by = self.request.query_params.get('sort_by', 'created_at')
+        
+        user_profile = User.objects.get(id=user_id).profile
+        blocking_ids = user_profile.blocking.values_list('id', flat=True)
+        blocked_by_ids = user_profile.blocked_by.values_list('id', flat=True)
+
+        queryset = Challenge.objects.filter(
+            challenger_note__author_id=user_id
+        ).exclude(
+            Q(original_note__author__id__in=blocking_ids) |
+            Q(original_note__author__id__in=blocked_by_ids) |
+            Q(challenger_note__author__id__in=blocking_ids) |
+            Q(challenger_note__author__id__in=blocked_by_ids)
+        )
+
+        if sort_by == 'most_likes':
+            return queryset.annotate(likes_count=Count('challenger_note__likes')).order_by('-likes_count')
+        elif sort_by == 'most_dislikes':
+            return queryset.annotate(dislikes_count=Count('challenger_note__dislikes')).order_by('-dislikes_count')
+
+        return queryset.order_by('-created_at')
+
+class UserSubsView(generics.ListAPIView):
+    serializer_class = SubSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user_id = self.kwargs['user_id']
+        sort_by = self.request.query_params.get('sort_by', 'created_at')
+        
+        user_profile = User.objects.get(id=user_id).profile
+        blocking_ids = user_profile.blocking.values_list('id', flat=True)
+        blocked_by_ids = user_profile.blocked_by.values_list('id', flat=True)
+
+        queryset = Sub.objects.filter(
+            sub_note__author_id=user_id
+        ).exclude(
+            Q(original_note__author__id__in=blocking_ids) |
+            Q(original_note__author__id__in=blocked_by_ids) |
+            Q(sub_note__author__id__in=blocking_ids) |
+            Q(sub_note__author__id__in=blocked_by_ids)
+        )
+
+        if sort_by == 'most_likes':
+            return queryset.annotate(likes_count=Count('sub_note__likes')).order_by('-likes_count')
+        elif sort_by == 'most_dislikes':
+            return queryset.annotate(dislikes_count=Count('sub_note__dislikes')).order_by('-dislikes_count')
+
+        return queryset.order_by('-created_at')
+
+class UserCombinedView(generics.ListAPIView):
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user_id = self.kwargs['user_id']
+        sort_by = self.request.query_params.get('sort_by', 'created_at')
+        user = User.objects.get(id=user_id)
+        blocking_ids = user.profile.blocking.values_list('id', flat=True)
+        blocked_by_ids = user.profile.blocked_by.values_list('id', flat=True)
+
+        notes = Note.objects.filter(author_id=user_id, is_challenger=False, is_subber=False)
+        challenges = Challenge.objects.filter(
+            Q(challenger_note__author_id=user_id)
+        ).exclude(
+            Q(original_note__author__id__in=blocking_ids) |
+            Q(original_note__author__id__in=blocked_by_ids)
+        )
+        subs = Sub.objects.filter(
+            Q(sub_note__author_id=user_id)
+        ).exclude(
+            Q(original_note__author__id__in=blocking_ids) |
+            Q(original_note__author__id__in=blocked_by_ids)
+        )
+
+        all_posts = list(notes) + list(challenges) + list(subs)
+
+        if sort_by == 'most_likes':
+            all_posts.sort(key=lambda x: getattr(x, 'likes_count', 0), reverse=True)
+        elif sort_by == 'most_dislikes':
+            all_posts.sort(key=lambda x: getattr(x, 'dislikes_count', 0), reverse=True)
+        else:
+            all_posts.sort(key=lambda x: x.created_at, reverse=True)
+
+        return all_posts
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializers = [get_serializer_for_instance(instance)(instance) for instance in page]
+            return self.get_paginated_response([serializer.data for serializer in serializers])
+
+        serializers = [get_serializer_for_instance(instance)(instance) for instance in queryset]
+        return Response([serializer.data for serializer in serializers])
+
+
+
+class AllNotesView(generics.ListAPIView):   #Home Page
     serializer_class = NoteSerializer
     permission_classes = [IsAuthenticated]
 
@@ -277,7 +418,7 @@ class AllNotesView(generics.ListAPIView):
         ).exclude(
             Q(author__id__in=blocking_ids) |          # Users the current user is blocking
             Q(author__id__in=blocked_by_ids)          # Users who are blocking the current user
-        )
+        ).filter(is_challenger=False, is_subber=False)
 
         if sort_by == 'most_likes':
             return queryset.annotate(likes_count=Count('likes')).order_by('-likes_count')
@@ -286,7 +427,144 @@ class AllNotesView(generics.ListAPIView):
 
         return queryset.order_by('-created_at')
 
-class FollowingNotesView(generics.ListAPIView):
+class AllChallengesView(generics.ListAPIView):
+    serializer_class = ChallengeSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        sort_by = self.request.query_params.get('sort_by', 'created_at')
+
+        following_ids = user.profile.following.values_list('id', flat=True)
+        blocking_ids = user.profile.blocking.values_list('id', flat=True)
+        blocked_by_ids = user.profile.blocked_by.values_list('id', flat=True)
+
+        queryset = Challenge.objects.filter(
+            Q(original_note__author__profile__privacy_flag=False) |
+            Q(original_note__author__id__in=following_ids) |
+            Q(original_note__author__id=user.id),
+            Q(challenger_note__author__profile__privacy_flag=False) |
+            Q(challenger_note__author__id__in=following_ids) |
+            Q(challenger_note__author__id=user.id)
+        ).exclude(
+            Q(original_note__author__id__in=blocking_ids) |
+            Q(original_note__author__id__in=blocked_by_ids) |
+            Q(challenger_note__author__id__in=blocking_ids) |
+            Q(challenger_note__author__id__in=blocked_by_ids)
+        )
+
+        if sort_by == 'most_likes':
+            return queryset.annotate(likes_count=Count('challenger_note__likes')).order_by('-likes_count')
+        elif sort_by == 'most_dislikes':
+            return queryset.annotate(dislikes_count=Count('challenger_note__dislikes')).order_by('-dislikes_count')
+
+        return queryset.order_by('-created_at')
+
+class AllSubsView(generics.ListAPIView):
+    serializer_class = SubSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        sort_by = self.request.query_params.get('sort_by', 'created_at')
+
+        following_ids = user.profile.following.values_list('id', flat=True)
+        blocking_ids = user.profile.blocking.values_list('id', flat=True)
+        blocked_by_ids = user.profile.blocked_by.values_list('id', flat=True)
+
+        queryset = Sub.objects.filter(
+            Q(original_note__author__profile__privacy_flag=False) |
+            Q(original_note__author__id__in=following_ids) |
+            Q(original_note__author__id=user.id),
+            Q(sub_note__author__profile__privacy_flag=False) |
+            Q(sub_note__author__id__in=following_ids) |
+            Q(sub_note__author__id=user.id)
+        ).exclude(
+            Q(original_note__author__id__in=blocking_ids) |
+            Q(original_note__author__id__in=blocked_by_ids) |
+            Q(sub_note__author__id__in=blocking_ids) |
+            Q(sub_note__author__id__in=blocked_by_ids)
+        )
+
+        if sort_by == 'most_likes':
+            return queryset.annotate(likes_count=Count('sub_note__likes')).order_by('-likes_count')
+        elif sort_by == 'most_dislikes':
+            return queryset.annotate(dislikes_count=Count('sub_note__dislikes')).order_by('-dislikes_count')
+
+        return queryset.order_by('-created_at')
+
+class AllCombinedView(generics.ListAPIView):
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        sort_by = self.request.query_params.get('sort_by', 'created_at')
+
+        following_ids = user.profile.following.values_list('id', flat=True)
+        blocking_ids = user.profile.blocking.values_list('id', flat=True)
+        blocked_by_ids = user.profile.blocked_by.values_list('id', flat=True)
+
+        notes = Note.objects.filter(
+            Q(author__profile__privacy_flag=False) |
+            Q(author__id__in=following_ids) |
+            Q(author__id=user.id)
+        ).exclude(
+            Q(author__id__in=blocking_ids) |
+            Q(author__id__in=blocked_by_ids)
+        ).filter(is_challenger=False, is_subber=False)
+
+        challenges = Challenge.objects.filter(
+            Q(original_note__author__profile__privacy_flag=False) |
+            Q(original_note__author__id__in=following_ids) |
+            Q(original_note__author__id=user.id) |
+            Q(challenger_note__author__profile__privacy_flag=False) |
+            Q(challenger_note__author__id__in=following_ids) |
+            Q(challenger_note__author__id=user.id)
+        ).exclude(
+            Q(original_note__author__id__in=blocking_ids) |
+            Q(original_note__author__id__in=blocked_by_ids) |
+            Q(challenger_note__author__id__in=blocking_ids) |
+            Q(challenger_note__author__id__in=blocked_by_ids)
+        )
+
+        subs = Sub.objects.filter(
+            Q(original_note__author__profile__privacy_flag=False) |
+            Q(original_note__author__id__in=following_ids) |
+            Q(original_note__author__id=user.id) |
+            Q(sub_note__author__profile__privacy_flag=False) |
+            Q(sub_note__author__id__in=following_ids) |
+            Q(sub_note__author__id=user.id)
+        ).exclude(
+            Q(original_note__author__id__in=blocking_ids) |
+            Q(original_note__author__id__in=blocked_by_ids) |
+            Q(sub_note__author__id__in=blocking_ids) |
+            Q(sub_note__author__id__in=blocked_by_ids)
+        )
+
+        all_posts = list(notes) + list(challenges) + list(subs)
+
+        if sort_by == 'most_likes':
+            all_posts.sort(key=lambda x: getattr(x, 'likes_count', 0), reverse=True)
+        elif sort_by == 'most_dislikes':
+            all_posts.sort(key=lambda x: getattr(x, 'dislikes_count', 0), reverse=True)
+        else:
+            all_posts.sort(key=lambda x: x.created_at, reverse=True)
+
+        return all_posts
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializers = [get_serializer_for_instance(instance)(instance) for instance in page]
+            return self.get_paginated_response([serializer.data for serializer in serializers])
+
+        serializers = [get_serializer_for_instance(instance)(instance) for instance in queryset]
+        return Response([serializer.data for serializer in serializers])
+
+    
+class FollowingNotesView(generics.ListAPIView):  #Home Page
     serializer_class = NoteSerializer
     permission_classes = [IsAuthenticated]
 
@@ -296,12 +574,178 @@ class FollowingNotesView(generics.ListAPIView):
         
         following_ids = user.profile.following.values_list('id', flat=True)
 
-        queryset = Note.objects.filter(author_id__in=following_ids)
+        queryset = Note.objects.filter(author_id__in=following_ids, is_challenger=False, is_subber=False)
 
         if sort_by == 'most_likes':
             return queryset.annotate(likes_count=Count('likes')).order_by('-likes_count')
         elif sort_by == 'most_dislikes':
             return queryset.annotate(dislikes_count=Count('dislikes')).order_by('-dislikes_count')
+
+        return queryset.order_by('-created_at')
+    
+class FollowingChallengesView(generics.ListAPIView):
+    serializer_class = ChallengeSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        sort_by = self.request.query_params.get('sort_by', 'created_at')
+
+        following_ids = user.profile.following.values_list('id', flat=True)
+        blocking_ids = user.profile.blocking.values_list('id', flat=True)
+        blocked_by_ids = user.profile.blocked_by.values_list('id', flat=True)
+
+        queryset = Challenge.objects.filter(
+            Q(original_note__author__profile__privacy_flag=False) |
+            Q(original_note__author__id__in=following_ids) |
+            Q(original_note__author__id=user.id),
+            Q(challenger_note__author__id__in=following_ids)
+        ).exclude(
+            Q(original_note__author__id__in=blocking_ids) |
+            Q(original_note__author__id__in=blocked_by_ids) |
+            Q(challenger_note__author__id__in=blocking_ids) |
+            Q(challenger_note__author__id__in=blocked_by_ids)
+        )
+
+        if sort_by == 'most_likes':
+            return queryset.annotate(likes_count=Count('challenger_note__likes')).order_by('-likes_count')
+        elif sort_by == 'most_dislikes':
+            return queryset.annotate(dislikes_count=Count('challenger_note__dislikes')).order_by('-dislikes_count')
+
+        return queryset.order_by('-created_at')
+
+class FollowingSubsView(generics.ListAPIView):
+    serializer_class = SubSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        sort_by = self.request.query_params.get('sort_by', 'created_at')
+
+        following_ids = user.profile.following.values_list('id', flat=True)
+        blocking_ids = user.profile.blocking.values_list('id', flat=True)
+        blocked_by_ids = user.profile.blocked_by.values_list('id', flat=True)
+
+        queryset = Sub.objects.filter(
+            Q(original_note__author__profile__privacy_flag=False) |
+            Q(original_note__author__id__in=following_ids) |
+            Q(original_note__author__id=user.id),
+            Q(sub_note__author__id__in=following_ids)
+        ).exclude(
+            Q(original_note__author__id__in=blocking_ids) |
+            Q(original_note__author__id__in=blocked_by_ids) |
+            Q(sub_note__author__id__in=blocking_ids) |
+            Q(sub_note__author__id__in=blocked_by_ids)
+        )
+
+        if sort_by == 'most_likes':
+            return queryset.annotate(likes_count=Count('sub_note__likes')).order_by('-likes_count')
+        elif sort_by == 'most_dislikes':
+            return queryset.annotate(dislikes_count=Count('sub_note__dislikes')).order_by('-dislikes_count')
+
+        return queryset.order_by('-created_at')
+
+class FollowingCombinedView(generics.ListAPIView):
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        sort_by = self.request.query_params.get('sort_by', 'created_at')
+
+        following_ids = user.profile.following.values_list('id', flat=True)
+        blocking_ids = user.profile.blocking.values_list('id', flat=True)
+        blocked_by_ids = user.profile.blocked_by.values_list('id', flat=True)
+
+        notes = Note.objects.filter(author_id__in=following_ids, is_challenger=False, is_subber=False)
+        challenges = Challenge.objects.filter(
+            Q(challenger_note__author__id__in=following_ids)
+        ).exclude(
+            Q(original_note__author__id__in=blocking_ids) |
+            Q(original_note__author__id__in=blocked_by_ids)
+        )
+        subs = Sub.objects.filter(
+            Q(sub_note__author__id__in=following_ids)
+        ).exclude(
+            Q(original_note__author__id__in=blocking_ids) |
+            Q(original_note__author__id__in=blocked_by_ids)
+        )
+
+        all_posts = list(notes) + list(challenges) + list(subs)
+
+        if sort_by == 'most_likes':
+            all_posts.sort(key=lambda x: getattr(x, 'likes_count', 0), reverse=True)
+        elif sort_by == 'most_dislikes':
+            all_posts.sort(key=lambda x: getattr(x, 'dislikes_count', 0), reverse=True)
+        else:
+            all_posts.sort(key=lambda x: x.created_at, reverse=True)
+
+        return all_posts
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializers = [get_serializer_for_instance(instance)(instance) for instance in page]
+            return self.get_paginated_response([serializer.data for serializer in serializers])
+
+        serializers = [get_serializer_for_instance(instance)(instance) for instance in queryset]
+        return Response([serializer.data for serializer in serializers])
+
+
+class RelatedSubsView(generics.ListAPIView):
+    serializer_class = SubSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        note_id = self.kwargs['note_id']
+        sort_by = self.request.query_params.get('sort_by', 'created_at')
+
+        blocking_ids = user.profile.blocking.values_list('id', flat=True)
+        blocked_by_ids = user.profile.blocked_by.values_list('id', flat=True)
+
+        queryset = Sub.objects.filter(
+            original_note_id=note_id
+        ).exclude(
+            Q(original_note__author__id__in=blocking_ids) |
+            Q(original_note__author__id__in=blocked_by_ids) |
+            Q(sub_note__author__id__in=blocking_ids) |
+            Q(sub_note__author__id__in=blocked_by_ids)
+        )
+
+        if sort_by == 'most_likes':
+            return queryset.annotate(likes_count=Count('sub_note__likes')).order_by('-likes_count')
+        elif sort_by == 'most_dislikes':
+            return queryset.annotate(dislikes_count=Count('sub_note__dislikes')).order_by('-dislikes_count')
+
+        return queryset.order_by('-created_at')
+    
+class RelatedChallengesView(generics.ListAPIView):
+    serializer_class = ChallengeSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        note_id = self.kwargs['note_id']
+        sort_by = self.request.query_params.get('sort_by', 'created_at')
+
+        blocking_ids = user.profile.blocking.values_list('id', flat=True)
+        blocked_by_ids = user.profile.blocked_by.values_list('id', flat=True)
+
+        queryset = Challenge.objects.filter(
+            original_note_id=note_id
+        ).exclude(
+            Q(original_note__author__id__in=blocking_ids) |
+            Q(original_note__author__id__in=blocked_by_ids) |
+            Q(challenger_note__author__id__in=blocking_ids) |
+            Q(challenger_note__author__id__in=blocked_by_ids)
+        )
+
+        if sort_by == 'most_likes':
+            return queryset.annotate(likes_count=Count('challenger_note__likes')).order_by('-likes_count')
+        elif sort_by == 'most_dislikes':
+            return queryset.annotate(dislikes_count=Count('challenger_note__dislikes')).order_by('-dislikes_count')
 
         return queryset.order_by('-created_at')
 

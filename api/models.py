@@ -29,9 +29,27 @@ class Note(models.Model):
     image1 = models.ImageField(upload_to=note_image_upload_path, null=True, blank=True)
     image2 = models.ImageField(upload_to=note_image_upload_path, null=True, blank=True)
     image3 = models.ImageField(upload_to=note_image_upload_path, null=True, blank=True)
+    is_challenger = models.BooleanField(default=False)
+    is_subber = models.BooleanField(default=False)
 
     def __str__(self):
         return f"Note by {self.author.username} on {self.created_at}"
+    
+class Challenge(models.Model):
+    original_note = models.ForeignKey(Note, on_delete=models.CASCADE, related_name='challenges')
+    challenger_note = models.OneToOneField(Note, on_delete=models.CASCADE, related_name='challenger_note')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Challenge-Note to {self.original_note.id} by {self.challenger_note.author.username}"
+    
+class Sub(models.Model):
+    original_note = models.ForeignKey(Note, on_delete=models.CASCADE, related_name='subs')
+    sub_note = models.OneToOneField(Note, on_delete=models.CASCADE, related_name='sub_note')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Sub-Note to {self.original_note.id} by {self.sub_note.author.username}"
 
 class Profile(models.Model):
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
