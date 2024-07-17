@@ -94,10 +94,12 @@ class NoteSerializer(serializers.ModelSerializer):
 class ChallengeSerializer(serializers.ModelSerializer):
     original_note = NoteSerializer(read_only=True)
     challenger_note = NoteSerializer(read_only=True)
+    original_picks = serializers.StringRelatedField(many=True, read_only=True)
+    challenger_picks = serializers.StringRelatedField(many=True, read_only=True)
 
     class Meta:
         model = Challenge
-        fields = ['id', 'original_note', 'challenger_note', 'created_at']
+        fields = ['id', 'original_note', 'challenger_note', 'created_at', 'original_picks', 'challenger_picks', 'pending', 'accepted', 'declined', 'wager']
 
 
 class SubSerializer(serializers.ModelSerializer):

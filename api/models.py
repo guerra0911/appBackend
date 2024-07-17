@@ -36,8 +36,14 @@ class Note(models.Model):
         return f"Note by {self.author.username} on {self.created_at}"
     
 class Challenge(models.Model):
-    original_note = models.ForeignKey(Note, on_delete=models.CASCADE, related_name='challenges')
+    original_note = models.ForeignKey(Note, on_delete=models.PROTECT, related_name='challenges')
     challenger_note = models.OneToOneField(Note, on_delete=models.CASCADE, related_name='challenger_note')
+    original_picks = models.ManyToManyField(User, related_name='original_picks', default=0)
+    challenger_picks = models.ManyToManyField(User, related_name='challenger_picks', default=0)
+    pending = models.BooleanField(default=True)
+    accepted = models.BooleanField(default=False)
+    declined = models.BooleanField(default=False)
+    wager = models.IntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

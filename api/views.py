@@ -12,12 +12,15 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db.models import Count, Q, F
 from django.db import transaction
+from django.utils import timezone
 import json
 
 import logging
 
 logger = logging.getLogger(__name__)
 
+
+### USERS ###
 class CreateUserView(generics.CreateAPIView):
     queryset = User.objects.all()
     serializer_class = UserSerializer
@@ -29,7 +32,8 @@ class CurrentUserView(APIView):
     def get(self, request):
         serializer = UserSerializer(request.user)
         return Response(serializer.data)
-
+    
+### PROFILE ###
 class UserProfileView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -58,7 +62,69 @@ class UserSearchView(APIView):
             serializer = UserSerializer(users, many=True)
             return Response(serializer.data)
         return Response([])
-        
+
+@api_view(['GET'])
+def followed_by(request, profile_id):
+    try:
+        profile = Profile.objects.get(id=profile_id)
+        users = profile.followers.all()
+        serializer = UserSerializer(users, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    except Profile.DoesNotExist:
+        return Response({'error': 'Profile not found'}, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(['GET'])
+def following(request, profile_id):
+    try:
+        profile = Profile.objects.get(id=profile_id)
+        users = profile.following.all()
+        serializer = UserSerializer(users, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    except Profile.DoesNotExist:
+        return Response({'error': 'Profile not found'}, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(['GET'])
+def requested_by(request):
+    try:
+        user = request.user
+        users = user.profile.requests.all()
+        serializer = UserSerializer(users, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    except Profile.DoesNotExist:
+        return Response({'error': 'Profile not found'}, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(['GET'])
+def requesting(request):
+    try:
+        user = request.user
+        users = user.profile.requesting.all()
+        serializer = UserSerializer(users, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    except Profile.DoesNotExist:
+        return Response({'error': 'Profile not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+@api_view(['GET'])
+def blocked_by(request):
+    try:
+        user = request.user
+        users = user.profile.blocked_by.all()
+        serializer = UserSerializer(users, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    except Profile.DoesNotExist:
+        return Response({'error': 'Profile not found'}, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(['GET'])
+def blocking(request):
+    try:
+        user = request.user
+        users = user.profile.blocking.all()
+        serializer = UserSerializer(users, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    except Profile.DoesNotExist:
+        return Response({'error': 'Profile not found'}, status=status.HTTP_404_NOT_FOUND)
+
+
+### PROFILE ACTIONS ###       
 class UpdateUserProfileView(APIView):
     parser_classes = (MultiPartParser, FormParser,)
     permission_classes = [IsAuthenticated]
@@ -91,9 +157,7 @@ class UpdateUserProfileView(APIView):
         # Print errors if serializer is not valid
         print("Serializer errors:", serializer.errors)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
-    
+ 
 class FollowView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -222,7 +286,8 @@ class UnblockView(APIView):
             return Response({'error': 'not_blocking'}, status=status.HTTP_400_BAD_REQUEST)
         except User.DoesNotExist:
             return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
-        
+
+### NOTES ###     
 class NoteListCreate(generics.ListCreateAPIView):
     serializer_class = NoteSerializer
     permission_classes = [IsAuthenticated]
@@ -242,43 +307,6 @@ class NoteListCreate(generics.ListCreateAPIView):
         else:
             print(serializer.errors)
 
-class CreateChallengeView(generics.CreateAPIView):
-    serializer_class = ChallengeSerializer
-    permission_classes = [IsAuthenticated]
-
-    def perform_create(self, serializer):
-        # The original note being challenged
-        original_note = Note.objects.get(pk=self.request.data['original_note'])
-
-        # The challenger note
-        challenger_note = Note.objects.get(pk=self.request.data['challenger_note'])
-
-        # Save the challenge linking the original and challenger notes
-        serializer.save(original_note=original_note, challenger_note=challenger_note)
-        
-class CreateSubView(generics.CreateAPIView):
-    serializer_class = SubSerializer
-    permission_classes = [IsAuthenticated]
-
-    def perform_create(self, serializer):
-        # The original note being subbed
-        original_note = Note.objects.get(pk=self.request.data['original_note'])
-
-        # The sub note
-        sub_note = Note.objects.get(pk=self.request.data['sub_note'])
-
-        # Save the sub linking the original and sub notes
-        serializer.save(original_note=original_note, sub_note=sub_note)
-
-def get_serializer_for_instance(instance):
-    if isinstance(instance, Note):
-        return NoteSerializer
-    elif isinstance(instance, Challenge):
-        return ChallengeSerializer
-    elif isinstance(instance, Sub):
-        return SubSerializer
-    return NoteSerializer
-   
 class UserNotesView(generics.ListAPIView):  #ProfilePages
     serializer_class = NoteSerializer
     permission_classes = [IsAuthenticated]
@@ -295,110 +323,6 @@ class UserNotesView(generics.ListAPIView):  #ProfilePages
         
         return queryset.order_by('-created_at')
     
-class UserChallengesView(generics.ListAPIView):
-    serializer_class = ChallengeSerializer
-    permission_classes = [IsAuthenticated]
-
-    def get_queryset(self):
-        user_id = self.kwargs['user_id']
-        sort_by = self.request.query_params.get('sort_by', 'created_at')
-        
-        user_profile = User.objects.get(id=user_id).profile
-        blocking_ids = user_profile.blocking.values_list('id', flat=True)
-        blocked_by_ids = user_profile.blocked_by.values_list('id', flat=True)
-
-        queryset = Challenge.objects.filter(
-            challenger_note__author_id=user_id
-        ).exclude(
-            Q(original_note__author__id__in=blocking_ids) |
-            Q(original_note__author__id__in=blocked_by_ids) |
-            Q(challenger_note__author__id__in=blocking_ids) |
-            Q(challenger_note__author__id__in=blocked_by_ids)
-        )
-
-        if sort_by == 'most_likes':
-            return queryset.annotate(likes_count=Count('challenger_note__likes')).order_by('-likes_count')
-        elif sort_by == 'most_dislikes':
-            return queryset.annotate(dislikes_count=Count('challenger_note__dislikes')).order_by('-dislikes_count')
-
-        return queryset.order_by('-created_at')
-
-class UserSubsView(generics.ListAPIView):
-    serializer_class = SubSerializer
-    permission_classes = [IsAuthenticated]
-
-    def get_queryset(self):
-        user_id = self.kwargs['user_id']
-        sort_by = self.request.query_params.get('sort_by', 'created_at')
-        
-        user_profile = User.objects.get(id=user_id).profile
-        blocking_ids = user_profile.blocking.values_list('id', flat=True)
-        blocked_by_ids = user_profile.blocked_by.values_list('id', flat=True)
-
-        queryset = Sub.objects.filter(
-            sub_note__author_id=user_id
-        ).exclude(
-            Q(original_note__author__id__in=blocking_ids) |
-            Q(original_note__author__id__in=blocked_by_ids) |
-            Q(sub_note__author__id__in=blocking_ids) |
-            Q(sub_note__author__id__in=blocked_by_ids)
-        )
-
-        if sort_by == 'most_likes':
-            return queryset.annotate(likes_count=Count('sub_note__likes')).order_by('-likes_count')
-        elif sort_by == 'most_dislikes':
-            return queryset.annotate(dislikes_count=Count('sub_note__dislikes')).order_by('-dislikes_count')
-
-        return queryset.order_by('-created_at')
-
-class UserCombinedView(generics.ListAPIView):
-    permission_classes = [IsAuthenticated]
-
-    def get_queryset(self):
-        user_id = self.kwargs['user_id']
-        sort_by = self.request.query_params.get('sort_by', 'created_at')
-        user = User.objects.get(id=user_id)
-        blocking_ids = user.profile.blocking.values_list('id', flat=True)
-        blocked_by_ids = user.profile.blocked_by.values_list('id', flat=True)
-
-        notes = Note.objects.filter(author_id=user_id, is_challenger=False, is_subber=False)
-        challenges = Challenge.objects.filter(
-            Q(challenger_note__author_id=user_id)
-        ).exclude(
-            Q(original_note__author__id__in=blocking_ids) |
-            Q(original_note__author__id__in=blocked_by_ids)
-        )
-        subs = Sub.objects.filter(
-            Q(sub_note__author_id=user_id)
-        ).exclude(
-            Q(original_note__author__id__in=blocking_ids) |
-            Q(original_note__author__id__in=blocked_by_ids)
-        )
-
-        all_posts = list(notes) + list(challenges) + list(subs)
-
-        if sort_by == 'most_likes':
-            all_posts.sort(key=lambda x: getattr(x, 'likes_count', 0), reverse=True)
-        elif sort_by == 'most_dislikes':
-            all_posts.sort(key=lambda x: getattr(x, 'dislikes_count', 0), reverse=True)
-        else:
-            all_posts.sort(key=lambda x: x.created_at, reverse=True)
-
-        return all_posts
-
-    def list(self, request, *args, **kwargs):
-        queryset = self.filter_queryset(self.get_queryset())
-
-        page = self.paginate_queryset(queryset)
-        if page is not None:
-            serializers = [get_serializer_for_instance(instance)(instance) for instance in page]
-            return self.get_paginated_response([serializer.data for serializer in serializers])
-
-        serializers = [get_serializer_for_instance(instance)(instance) for instance in queryset]
-        return Response([serializer.data for serializer in serializers])
-
-
-
 class AllNotesView(generics.ListAPIView):   #Home Page
     serializer_class = NoteSerializer
     permission_classes = [IsAuthenticated]
@@ -427,36 +351,141 @@ class AllNotesView(generics.ListAPIView):   #Home Page
 
         return queryset.order_by('-created_at')
 
-class AllChallengesView(generics.ListAPIView):
-    serializer_class = ChallengeSerializer
+class FollowingNotesView(generics.ListAPIView):  #Home Page
+    serializer_class = NoteSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         user = self.request.user
         sort_by = self.request.query_params.get('sort_by', 'created_at')
-
+        
         following_ids = user.profile.following.values_list('id', flat=True)
-        blocking_ids = user.profile.blocking.values_list('id', flat=True)
-        blocked_by_ids = user.profile.blocked_by.values_list('id', flat=True)
 
-        queryset = Challenge.objects.filter(
-            Q(original_note__author__profile__privacy_flag=False) |
-            Q(original_note__author__id__in=following_ids) |
-            Q(original_note__author__id=user.id),
-            Q(challenger_note__author__profile__privacy_flag=False) |
-            Q(challenger_note__author__id__in=following_ids) |
-            Q(challenger_note__author__id=user.id)
+        queryset = Note.objects.filter(author_id__in=following_ids, is_challenger=False, is_subber=False)
+
+        if sort_by == 'most_likes':
+            return queryset.annotate(likes_count=Count('likes')).order_by('-likes_count')
+        elif sort_by == 'most_dislikes':
+            return queryset.annotate(dislikes_count=Count('dislikes')).order_by('-dislikes_count')
+
+        return queryset.order_by('-created_at')
+
+class NoteDelete(generics.DestroyAPIView):
+    serializer_class = NoteSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        return Note.objects.filter(author=user)
+
+
+### NOTES ACTIONS ###
+@api_view(['POST'])
+def like_post(request, note_id):
+    try:
+        note = Note.objects.get(id=note_id)
+        user = request.user
+
+        if user in note.dislikes.all():
+            note.dislikes.remove(user)
+        if user not in note.likes.all():
+            note.likes.add(user)
+        else:
+            note.likes.remove(user)
+
+        note.save()
+        return Response({'likes': note.likes.count(), 'dislikes': note.dislikes.count()}, status=status.HTTP_200_OK)
+    except Note.DoesNotExist:
+        return Response({'error': 'Note not found'}, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(['POST'])
+def dislike_post(request, note_id):
+    try:
+        note = Note.objects.get(id=note_id)
+        user = request.user
+
+        if user in note.likes.all():
+            note.likes.remove(user)
+        if user not in note.dislikes.all():
+            note.dislikes.add(user)
+        else:
+            note.dislikes.remove(user)
+
+        note.save()
+        return Response({'likes': note.likes.count(), 'dislikes': note.dislikes.count()}, status=status.HTTP_200_OK)
+    except Note.DoesNotExist:
+        return Response({'error': 'Note not found'}, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(['GET'])
+def liked_by(request, note_id):
+    try:
+        note = Note.objects.get(id=note_id)
+        users = note.likes.all()
+        serializer = UserSerializer(users, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    except Note.DoesNotExist:
+        return Response({'error': 'Note not found'}, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(['GET'])
+def disliked_by(request, note_id):
+    try:
+        note = Note.objects.get(id=note_id)
+        users = note.dislikes.all()
+        serializer = UserSerializer(users, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    except Note.DoesNotExist:
+        return Response({'error': 'Note not found'}, status=status.HTTP_404_NOT_FOUND)
+
+
+### SUBS ###   
+class CreateSubView(generics.CreateAPIView):
+    serializer_class = SubSerializer
+    permission_classes = [IsAuthenticated]
+
+    def perform_create(self, serializer):
+        # The original note being subbed
+        original_note = Note.objects.get(pk=self.request.data['original_note'])
+
+        # The sub note
+        sub_note = Note.objects.get(pk=self.request.data['sub_note'])
+
+        # Save the sub linking the original and sub notes
+        serializer.save(original_note=original_note, sub_note=sub_note)
+
+def get_serializer_for_instance(instance):
+    if isinstance(instance, Note):
+        return NoteSerializer
+    elif isinstance(instance, Challenge):
+        return ChallengeSerializer
+    elif isinstance(instance, Sub):
+        return SubSerializer
+    return NoteSerializer
+   
+class UserSubsView(generics.ListAPIView):
+    serializer_class = SubSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user_id = self.kwargs['user_id']
+        sort_by = self.request.query_params.get('sort_by', 'created_at')
+        
+        user_profile = User.objects.get(id=user_id).profile
+        blocking_ids = user_profile.blocking.values_list('id', flat=True)
+        blocked_by_ids = user_profile.blocked_by.values_list('id', flat=True)
+
+        queryset = Sub.objects.filter(
+            sub_note__author_id=user_id
         ).exclude(
             Q(original_note__author__id__in=blocking_ids) |
             Q(original_note__author__id__in=blocked_by_ids) |
-            Q(challenger_note__author__id__in=blocking_ids) |
-            Q(challenger_note__author__id__in=blocked_by_ids)
+            Q(sub_note__author__id__in=blocking_ids) |
+            Q(sub_note__author__id__in=blocked_by_ids)
         )
 
         if sort_by == 'most_likes':
-            return queryset.annotate(likes_count=Count('challenger_note__likes')).order_by('-likes_count')
+            return queryset.annotate(likes_count=Count('sub_note__likes')).order_by('-likes_count')
         elif sort_by == 'most_dislikes':
-            return queryset.annotate(dislikes_count=Count('challenger_note__dislikes')).order_by('-dislikes_count')
+            return queryset.annotate(dislikes_count=Count('sub_note__dislikes')).order_by('-dislikes_count')
 
         return queryset.order_by('-created_at')
 
@@ -493,6 +522,370 @@ class AllSubsView(generics.ListAPIView):
 
         return queryset.order_by('-created_at')
 
+class FollowingSubsView(generics.ListAPIView):
+    serializer_class = SubSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        sort_by = self.request.query_params.get('sort_by', 'created_at')
+
+        following_ids = user.profile.following.values_list('id', flat=True)
+        blocking_ids = user.profile.blocking.values_list('id', flat=True)
+        blocked_by_ids = user.profile.blocked_by.values_list('id', flat=True)
+
+        queryset = Sub.objects.filter(
+            Q(original_note__author__profile__privacy_flag=False) |
+            Q(original_note__author__id__in=following_ids) |
+            Q(original_note__author__id=user.id),
+            Q(sub_note__author__id__in=following_ids)
+        ).exclude(
+            Q(original_note__author__id__in=blocking_ids) |
+            Q(original_note__author__id__in=blocked_by_ids) |
+            Q(sub_note__author__id__in=blocking_ids) |
+            Q(sub_note__author__id__in=blocked_by_ids)
+        )
+
+        if sort_by == 'most_likes':
+            return queryset.annotate(likes_count=Count('sub_note__likes')).order_by('-likes_count')
+        elif sort_by == 'most_dislikes':
+            return queryset.annotate(dislikes_count=Count('sub_note__dislikes')).order_by('-dislikes_count')
+
+        return queryset.order_by('-created_at')
+
+class RelatedSubsView(generics.ListAPIView):
+    serializer_class = SubSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        note_id = self.kwargs['note_id']
+        sort_by = self.request.query_params.get('sort_by', 'created_at')
+
+        blocking_ids = user.profile.blocking.values_list('id', flat=True)
+        blocked_by_ids = user.profile.blocked_by.values_list('id', flat=True)
+
+        queryset = Sub.objects.filter(
+            original_note_id=note_id
+        ).exclude(
+            Q(original_note__author__id__in=blocking_ids) |
+            Q(original_note__author__id__in=blocked_by_ids) |
+            Q(sub_note__author__id__in=blocking_ids) |
+            Q(sub_note__author__id__in=blocked_by_ids)
+        )
+
+        if sort_by == 'most_likes':
+            return queryset.annotate(likes_count=Count('sub_note__likes')).order_by('-likes_count')
+        elif sort_by == 'most_dislikes':
+            return queryset.annotate(dislikes_count=Count('sub_note__dislikes')).order_by('-dislikes_count')
+
+        return queryset.order_by('-created_at')
+ 
+
+### CHALLENGE ###   
+class CreateChallengeView(generics.CreateAPIView):
+    serializer_class = ChallengeSerializer
+    permission_classes = [IsAuthenticated]
+
+    def perform_create(self, serializer):
+        # The original note being challenged
+        original_note = Note.objects.get(pk=self.request.data['original_note'])
+
+        # The challenger note
+        challenger_note = Note.objects.get(pk=self.request.data['challenger_note'])
+
+        # Save the challenge linking the original and challenger notes
+        serializer.save(original_note=original_note, challenger_note=challenger_note, wager=self.request.data.get('wager', 0))
+    
+class UserChallengesView(generics.ListAPIView):
+    serializer_class = ChallengeSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user_id = self.kwargs['user_id']
+        sort_by = self.request.query_params.get('sort_by', 'created_at')
+        
+        user_profile = User.objects.get(id=user_id).profile
+        blocking_ids = user_profile.blocking.values_list('id', flat=True)
+        blocked_by_ids = user_profile.blocked_by.values_list('id', flat=True)
+
+        queryset = Challenge.objects.filter(
+            challenger_note__author_id=user_id,
+            pending=False,
+            accepted=True,
+            declined=False
+        ).exclude(
+            Q(original_note__author__id__in=blocking_ids) |
+            Q(original_note__author__id__in=blocked_by_ids) |
+            Q(challenger_note__author__id__in=blocking_ids) |
+            Q(challenger_note__author__id__in=blocked_by_ids)
+        )
+
+        if sort_by == 'most_likes':
+            return queryset.annotate(likes_count=Count('challenger_note__likes')).order_by('-likes_count')
+        elif sort_by == 'most_dislikes':
+            return queryset.annotate(dislikes_count=Count('challenger_note__dislikes')).order_by('-dislikes_count')
+
+        return queryset.order_by('-created_at')
+
+class AllChallengesView(generics.ListAPIView):
+    serializer_class = ChallengeSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        sort_by = self.request.query_params.get('sort_by', 'created_at')
+
+        following_ids = user.profile.following.values_list('id', flat=True)
+        blocking_ids = user.profile.blocking.values_list('id', flat=True)
+        blocked_by_ids = user.profile.blocked_by.values_list('id', flat=True)
+
+        queryset = Challenge.objects.filter(
+            (Q(original_note__author__profile__privacy_flag=False) |
+            Q(original_note__author__id__in=following_ids) |
+            Q(original_note__author__id=user.id)) &
+            (Q(challenger_note__author__profile__privacy_flag=False) |
+            Q(challenger_note__author__id__in=following_ids) |
+            Q(challenger_note__author__id=user.id)),
+            pending=False,
+            accepted=True,
+            declined=False
+        ).exclude(
+            Q(original_note__author__id__in=blocking_ids) |
+            Q(original_note__author__id__in=blocked_by_ids) |
+            Q(challenger_note__author__id__in=blocking_ids) |
+            Q(challenger_note__author__id__in=blocked_by_ids)
+        )
+
+        if sort_by == 'most_likes':
+            return queryset.annotate(likes_count=Count('challenger_note__likes')).order_by('-likes_count')
+        elif sort_by == 'most_dislikes':
+            return queryset.annotate(dislikes_count=Count('challenger_note__dislikes')).order_by('-dislikes_count')
+
+        return queryset.order_by('-created_at')
+    
+class FollowingChallengesView(generics.ListAPIView):
+    serializer_class = ChallengeSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        sort_by = self.request.query_params.get('sort_by', 'created_at')
+
+        following_ids = user.profile.following.values_list('id', flat=True)
+        blocking_ids = user.profile.blocking.values_list('id', flat=True)
+        blocked_by_ids = user.profile.blocked_by.values_list('id', flat=True)
+
+        queryset = Challenge.objects.filter(
+            (Q(original_note__author__profile__privacy_flag=False) |
+            Q(original_note__author__id__in=following_ids) |
+            Q(original_note__author__id=user.id)) &
+            Q(challenger_note__author__id__in=following_ids),
+            pending=False,
+            accepted=True,
+            declined=False
+        ).exclude(
+            Q(original_note__author__id__in=blocking_ids) |
+            Q(original_note__author__id__in=blocked_by_ids) |
+            Q(challenger_note__author__id__in=blocking_ids) |
+            Q(challenger_note__author__id__in=blocked_by_ids)
+        )
+
+        if sort_by == 'most_likes':
+            return queryset.annotate(likes_count=Count('challenger_note__likes')).order_by('-likes_count')
+        elif sort_by == 'most_dislikes':
+            return queryset.annotate(dislikes_count=Count('challenger_note__dislikes')).order_by('-dislikes_count')
+
+        return queryset.order_by('-created_at')
+
+class RelatedChallengesView(generics.ListAPIView):
+    serializer_class = ChallengeSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        note_id = self.kwargs['note_id']
+        sort_by = self.request.query_params.get('sort_by', 'created_at')
+
+        blocking_ids = user.profile.blocking.values_list('id', flat=True)
+        blocked_by_ids = user.profile.blocked_by.values_list('id', flat=True)
+
+        queryset = Challenge.objects.filter(
+            original_note_id=note_id,
+            pending=False,
+            accepted=True,
+            declined=False
+        ).exclude(
+            Q(original_note__author__id__in=blocking_ids) |
+            Q(original_note__author__id__in=blocked_by_ids) |
+            Q(challenger_note__author__id__in=blocking_ids) |
+            Q(challenger_note__author__id__in=blocked_by_ids)
+        )
+
+        if sort_by == 'most_likes':
+            return queryset.annotate(likes_count=Count('challenger_note__likes')).order_by('-likes_count')
+        elif sort_by == 'most_dislikes':
+            return queryset.annotate(dislikes_count=Count('challenger_note__dislikes')).order_by('-dislikes_count')
+
+        return queryset.order_by('-created_at')
+
+class ChallengeRequestsView(generics.ListAPIView):
+    serializer_class = ChallengeSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        return Challenge.objects.filter(
+            original_note__author=user,
+            pending=True,
+            accepted=False,
+            declined=False
+        )
+
+class RequestingChallengeView(generics.ListAPIView):
+    serializer_class = ChallengeSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        return Challenge.objects.filter(
+            challenger_note__author=user,
+            pending=True,
+            accepted=False,
+            declined=False
+        )
+
+class DeclinedChallengeView(generics.ListAPIView):
+    serializer_class = ChallengeSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        return Challenge.objects.filter(
+            challenger_note__author=user,
+            pending=False,
+            accepted=False,
+            declined=True
+        )
+
+
+### CHALLENGE ACTIONS ###
+class AcceptChallengeView(APIView): # Called From Current User
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, challenge_id):
+        try:
+            challenge = Challenge.objects.get(id=challenge_id)
+            current_time = timezone.now()
+            challenge.pending = False
+            challenge.accepted = True
+            challenge.declined = False
+            challenge.created_at = current_time  # Update the created_at of the challenge
+            challenge.challenger_note.created_at = current_time  # Update the created_at of the challenger_note
+            challenge.challenger_note.save()  # Save the updated challenger_note
+            challenge.save()  # Save the updated challenge
+            return Response({'status': 'accepted'}, status=status.HTTP_200_OK)
+        except Challenge.DoesNotExist:
+            return Response({'error': 'Challenge not found'}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+class DeclineChallengeView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, challenge_id):
+        try:
+            challenge = Challenge.objects.get(id=challenge_id)
+            challenge.pending = False
+            challenge.accepted = False
+            challenge.declined = True
+            challenge.save()
+            return Response({'status': 'declined'}, status=status.HTTP_200_OK)
+        except Challenge.DoesNotExist:
+            return Response({'error': 'Challenge not found'}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+class ResubmitChallengeView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, challenge_id):
+        try:
+            challenge = Challenge.objects.get(id=challenge_id)
+            challenge.pending = True
+            challenge.accepted = False
+            challenge.declined = False
+            challenge.save()
+            return Response({'status': 'resubmitted'}, status=status.HTTP_200_OK)
+        except Challenge.DoesNotExist:
+            return Response({'error': 'Challenge not found'}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+class DeleteChallengeView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, challenge_id):
+        try:
+            challenge = Challenge.objects.get(id=challenge_id)
+            challenge.delete()
+            return Response({'status': 'deleted'}, status=status.HTTP_200_OK)
+        except Challenge.DoesNotExist:
+            return Response({'error': 'Challenge not found'}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+### COMBINED ###
+class UserCombinedView(generics.ListAPIView):
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user_id = self.kwargs['user_id']
+        sort_by = self.request.query_params.get('sort_by', 'created_at')
+        user = User.objects.get(id=user_id)
+        blocking_ids = user.profile.blocking.values_list('id', flat=True)
+        blocked_by_ids = user.profile.blocked_by.values_list('id', flat=True)
+
+        notes = Note.objects.filter(author_id=user_id, is_challenger=False, is_subber=False)
+        challenges = Challenge.objects.filter(
+            Q(challenger_note__author_id=user_id),
+            pending=False,
+            accepted=True,
+            declined=False
+        ).exclude(
+            Q(original_note__author__id__in=blocking_ids) |
+            Q(original_note__author__id__in=blocked_by_ids)
+        )
+        subs = Sub.objects.filter(
+            Q(sub_note__author_id=user_id)
+        ).exclude(
+            Q(original_note__author__id__in=blocking_ids) |
+            Q(original_note__author__id__in=blocked_by_ids)
+        )
+
+        all_posts = list(notes) + list(challenges) + list(subs)
+
+        if sort_by == 'most_likes':
+            all_posts.sort(key=lambda x: getattr(x, 'likes_count', 0), reverse=True)
+        elif sort_by == 'most_dislikes':
+            all_posts.sort(key=lambda x: getattr(x, 'dislikes_count', 0), reverse=True)
+        else:
+            all_posts.sort(key=lambda x: x.created_at, reverse=True)
+
+        return all_posts
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializers = [get_serializer_for_instance(instance)(instance) for instance in page]
+            return self.get_paginated_response([serializer.data for serializer in serializers])
+
+        serializers = [get_serializer_for_instance(instance)(instance) for instance in queryset]
+        return Response([serializer.data for serializer in serializers])
+
 class AllCombinedView(generics.ListAPIView):
     permission_classes = [IsAuthenticated]
 
@@ -514,12 +907,15 @@ class AllCombinedView(generics.ListAPIView):
         ).filter(is_challenger=False, is_subber=False)
 
         challenges = Challenge.objects.filter(
-            Q(original_note__author__profile__privacy_flag=False) |
+            (Q(original_note__author__profile__privacy_flag=False) |
             Q(original_note__author__id__in=following_ids) |
             Q(original_note__author__id=user.id) |
             Q(challenger_note__author__profile__privacy_flag=False) |
             Q(challenger_note__author__id__in=following_ids) |
-            Q(challenger_note__author__id=user.id)
+            Q(challenger_note__author__id=user.id)),
+            pending=False,
+            accepted=True,
+            declined=False
         ).exclude(
             Q(original_note__author__id__in=blocking_ids) |
             Q(original_note__author__id__in=blocked_by_ids) |
@@ -563,88 +959,6 @@ class AllCombinedView(generics.ListAPIView):
         serializers = [get_serializer_for_instance(instance)(instance) for instance in queryset]
         return Response([serializer.data for serializer in serializers])
 
-    
-class FollowingNotesView(generics.ListAPIView):  #Home Page
-    serializer_class = NoteSerializer
-    permission_classes = [IsAuthenticated]
-
-    def get_queryset(self):
-        user = self.request.user
-        sort_by = self.request.query_params.get('sort_by', 'created_at')
-        
-        following_ids = user.profile.following.values_list('id', flat=True)
-
-        queryset = Note.objects.filter(author_id__in=following_ids, is_challenger=False, is_subber=False)
-
-        if sort_by == 'most_likes':
-            return queryset.annotate(likes_count=Count('likes')).order_by('-likes_count')
-        elif sort_by == 'most_dislikes':
-            return queryset.annotate(dislikes_count=Count('dislikes')).order_by('-dislikes_count')
-
-        return queryset.order_by('-created_at')
-    
-class FollowingChallengesView(generics.ListAPIView):
-    serializer_class = ChallengeSerializer
-    permission_classes = [IsAuthenticated]
-
-    def get_queryset(self):
-        user = self.request.user
-        sort_by = self.request.query_params.get('sort_by', 'created_at')
-
-        following_ids = user.profile.following.values_list('id', flat=True)
-        blocking_ids = user.profile.blocking.values_list('id', flat=True)
-        blocked_by_ids = user.profile.blocked_by.values_list('id', flat=True)
-
-        queryset = Challenge.objects.filter(
-            Q(original_note__author__profile__privacy_flag=False) |
-            Q(original_note__author__id__in=following_ids) |
-            Q(original_note__author__id=user.id),
-            Q(challenger_note__author__id__in=following_ids)
-        ).exclude(
-            Q(original_note__author__id__in=blocking_ids) |
-            Q(original_note__author__id__in=blocked_by_ids) |
-            Q(challenger_note__author__id__in=blocking_ids) |
-            Q(challenger_note__author__id__in=blocked_by_ids)
-        )
-
-        if sort_by == 'most_likes':
-            return queryset.annotate(likes_count=Count('challenger_note__likes')).order_by('-likes_count')
-        elif sort_by == 'most_dislikes':
-            return queryset.annotate(dislikes_count=Count('challenger_note__dislikes')).order_by('-dislikes_count')
-
-        return queryset.order_by('-created_at')
-
-class FollowingSubsView(generics.ListAPIView):
-    serializer_class = SubSerializer
-    permission_classes = [IsAuthenticated]
-
-    def get_queryset(self):
-        user = self.request.user
-        sort_by = self.request.query_params.get('sort_by', 'created_at')
-
-        following_ids = user.profile.following.values_list('id', flat=True)
-        blocking_ids = user.profile.blocking.values_list('id', flat=True)
-        blocked_by_ids = user.profile.blocked_by.values_list('id', flat=True)
-
-        queryset = Sub.objects.filter(
-            Q(original_note__author__profile__privacy_flag=False) |
-            Q(original_note__author__id__in=following_ids) |
-            Q(original_note__author__id=user.id),
-            Q(sub_note__author__id__in=following_ids)
-        ).exclude(
-            Q(original_note__author__id__in=blocking_ids) |
-            Q(original_note__author__id__in=blocked_by_ids) |
-            Q(sub_note__author__id__in=blocking_ids) |
-            Q(sub_note__author__id__in=blocked_by_ids)
-        )
-
-        if sort_by == 'most_likes':
-            return queryset.annotate(likes_count=Count('sub_note__likes')).order_by('-likes_count')
-        elif sort_by == 'most_dislikes':
-            return queryset.annotate(dislikes_count=Count('sub_note__dislikes')).order_by('-dislikes_count')
-
-        return queryset.order_by('-created_at')
-
 class FollowingCombinedView(generics.ListAPIView):
     permission_classes = [IsAuthenticated]
 
@@ -658,7 +972,10 @@ class FollowingCombinedView(generics.ListAPIView):
 
         notes = Note.objects.filter(author_id__in=following_ids, is_challenger=False, is_subber=False)
         challenges = Challenge.objects.filter(
-            Q(challenger_note__author__id__in=following_ids)
+            Q(challenger_note__author__id__in=following_ids),
+            pending=False,
+            accepted=True,
+            declined=False
         ).exclude(
             Q(original_note__author__id__in=blocking_ids) |
             Q(original_note__author__id__in=blocked_by_ids)
@@ -693,70 +1010,7 @@ class FollowingCombinedView(generics.ListAPIView):
         return Response([serializer.data for serializer in serializers])
 
 
-class RelatedSubsView(generics.ListAPIView):
-    serializer_class = SubSerializer
-    permission_classes = [IsAuthenticated]
-
-    def get_queryset(self):
-        user = self.request.user
-        note_id = self.kwargs['note_id']
-        sort_by = self.request.query_params.get('sort_by', 'created_at')
-
-        blocking_ids = user.profile.blocking.values_list('id', flat=True)
-        blocked_by_ids = user.profile.blocked_by.values_list('id', flat=True)
-
-        queryset = Sub.objects.filter(
-            original_note_id=note_id
-        ).exclude(
-            Q(original_note__author__id__in=blocking_ids) |
-            Q(original_note__author__id__in=blocked_by_ids) |
-            Q(sub_note__author__id__in=blocking_ids) |
-            Q(sub_note__author__id__in=blocked_by_ids)
-        )
-
-        if sort_by == 'most_likes':
-            return queryset.annotate(likes_count=Count('sub_note__likes')).order_by('-likes_count')
-        elif sort_by == 'most_dislikes':
-            return queryset.annotate(dislikes_count=Count('sub_note__dislikes')).order_by('-dislikes_count')
-
-        return queryset.order_by('-created_at')
-    
-class RelatedChallengesView(generics.ListAPIView):
-    serializer_class = ChallengeSerializer
-    permission_classes = [IsAuthenticated]
-
-    def get_queryset(self):
-        user = self.request.user
-        note_id = self.kwargs['note_id']
-        sort_by = self.request.query_params.get('sort_by', 'created_at')
-
-        blocking_ids = user.profile.blocking.values_list('id', flat=True)
-        blocked_by_ids = user.profile.blocked_by.values_list('id', flat=True)
-
-        queryset = Challenge.objects.filter(
-            original_note_id=note_id
-        ).exclude(
-            Q(original_note__author__id__in=blocking_ids) |
-            Q(original_note__author__id__in=blocked_by_ids) |
-            Q(challenger_note__author__id__in=blocking_ids) |
-            Q(challenger_note__author__id__in=blocked_by_ids)
-        )
-
-        if sort_by == 'most_likes':
-            return queryset.annotate(likes_count=Count('challenger_note__likes')).order_by('-likes_count')
-        elif sort_by == 'most_dislikes':
-            return queryset.annotate(dislikes_count=Count('challenger_note__dislikes')).order_by('-dislikes_count')
-
-        return queryset.order_by('-created_at')
-
-class NoteDelete(generics.DestroyAPIView):
-    serializer_class = NoteSerializer
-    permission_classes = [IsAuthenticated]
-
-    def get_queryset(self):
-        user = self.request.user
-        return Note.objects.filter(author=user)
-
+### COMMENTS ###
 class CommentCreate(generics.CreateAPIView):
     serializer_class = CommentSerializer
     permission_classes = [IsAuthenticated]
@@ -766,14 +1020,20 @@ class CommentCreate(generics.CreateAPIView):
         note = Note.objects.get(id=note_id)
         serializer.save(author=self.request.user, note=note)
 
+
+### TEAMS ###
 class TeamViewSet(viewsets.ModelViewSet):
     queryset = Team.objects.all()
     serializer_class = TeamSerializer
 
+
+### BRACKET ###
 class BracketViewSet(viewsets.ModelViewSet):
     queryset = Bracket.objects.all()
     serializer_class = BracketSerializer
 
+
+### TOURNAMENT ###
 class CreateTournamentView(APIView):
     parser_classes = (MultiPartParser, FormParser)
     permission_classes = [IsAuthenticated]
@@ -876,9 +1136,6 @@ class CreateTournamentView(APIView):
             print("Serializer errors:", serializer.errors)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-
-
-
 class TournamentViewSet(viewsets.ModelViewSet):
     queryset = Tournament.objects.all()
     serializer_class = TournamentSerializer
@@ -956,8 +1213,6 @@ class TournamentViewSet(viewsets.ModelViewSet):
 
         return Response({'status': 'prediction submitted', 'bracket': BracketSerializer(bracket).data})
 
-
-
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
     def update_actual_bracket(self, request, pk=None):
         user = request.user
@@ -1030,122 +1285,3 @@ class TournamentViewSet(viewsets.ModelViewSet):
             if predicted and actual and predicted['id'] == actual['id']:
                 score += points_per_correct_prediction
         return score
-
-
-
-        
-@api_view(['POST'])
-def like_post(request, note_id):
-    try:
-        note = Note.objects.get(id=note_id)
-        user = request.user
-
-        if user in note.dislikes.all():
-            note.dislikes.remove(user)
-        if user not in note.likes.all():
-            note.likes.add(user)
-        else:
-            note.likes.remove(user)
-
-        note.save()
-        return Response({'likes': note.likes.count(), 'dislikes': note.dislikes.count()}, status=status.HTTP_200_OK)
-    except Note.DoesNotExist:
-        return Response({'error': 'Note not found'}, status=status.HTTP_404_NOT_FOUND)
-
-@api_view(['POST'])
-def dislike_post(request, note_id):
-    try:
-        note = Note.objects.get(id=note_id)
-        user = request.user
-
-        if user in note.likes.all():
-            note.likes.remove(user)
-        if user not in note.dislikes.all():
-            note.dislikes.add(user)
-        else:
-            note.dislikes.remove(user)
-
-        note.save()
-        return Response({'likes': note.likes.count(), 'dislikes': note.dislikes.count()}, status=status.HTTP_200_OK)
-    except Note.DoesNotExist:
-        return Response({'error': 'Note not found'}, status=status.HTTP_404_NOT_FOUND)
-
-@api_view(['GET'])
-def liked_by(request, note_id):
-    try:
-        note = Note.objects.get(id=note_id)
-        users = note.likes.all()
-        serializer = UserSerializer(users, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
-    except Note.DoesNotExist:
-        return Response({'error': 'Note not found'}, status=status.HTTP_404_NOT_FOUND)
-
-@api_view(['GET'])
-def disliked_by(request, note_id):
-    try:
-        note = Note.objects.get(id=note_id)
-        users = note.dislikes.all()
-        serializer = UserSerializer(users, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
-    except Note.DoesNotExist:
-        return Response({'error': 'Note not found'}, status=status.HTTP_404_NOT_FOUND)
-    
-@api_view(['GET'])
-def followed_by(request, profile_id):
-    try:
-        profile = Profile.objects.get(id=profile_id)
-        users = profile.followers.all()
-        serializer = UserSerializer(users, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
-    except Profile.DoesNotExist:
-        return Response({'error': 'Profile not found'}, status=status.HTTP_404_NOT_FOUND)
-
-@api_view(['GET'])
-def following(request, profile_id):
-    try:
-        profile = Profile.objects.get(id=profile_id)
-        users = profile.following.all()
-        serializer = UserSerializer(users, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
-    except Profile.DoesNotExist:
-        return Response({'error': 'Profile not found'}, status=status.HTTP_404_NOT_FOUND)
-
-@api_view(['GET'])
-def requested_by(request):
-    try:
-        user = request.user
-        users = user.profile.requests.all()
-        serializer = UserSerializer(users, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
-    except Profile.DoesNotExist:
-        return Response({'error': 'Profile not found'}, status=status.HTTP_404_NOT_FOUND)
-
-@api_view(['GET'])
-def requesting(request):
-    try:
-        user = request.user
-        users = user.profile.requesting.all()
-        serializer = UserSerializer(users, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
-    except Profile.DoesNotExist:
-        return Response({'error': 'Profile not found'}, status=status.HTTP_404_NOT_FOUND)
-    
-@api_view(['GET'])
-def blocked_by(request):
-    try:
-        user = request.user
-        users = user.profile.blocked_by.all()
-        serializer = UserSerializer(users, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
-    except Profile.DoesNotExist:
-        return Response({'error': 'Profile not found'}, status=status.HTTP_404_NOT_FOUND)
-
-@api_view(['GET'])
-def blocking(request):
-    try:
-        user = request.user
-        users = user.profile.blocking.all()
-        serializer = UserSerializer(users, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
-    except Profile.DoesNotExist:
-        return Response({'error': 'Profile not found'}, status=status.HTTP_404_NOT_FOUND)
