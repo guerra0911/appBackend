@@ -48,7 +48,7 @@ class Challenge(models.Model):
 
     def __str__(self):
         return f"Challenge-Note to {self.original_note.id} by {self.challenger_note.author.username}"
-    
+     
 class Sub(models.Model):
     original_note = models.ForeignKey(Note, on_delete=models.CASCADE, related_name='subs')
     sub_note = models.OneToOneField(Note, on_delete=models.CASCADE, related_name='sub_note')

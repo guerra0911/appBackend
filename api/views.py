@@ -835,6 +835,62 @@ class DeleteChallengeView(APIView):
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
+@api_view(['POST'])
+def pick_original(request, challenge_id):
+    try:
+        challenge = Challenge.objects.get(id=challenge_id)
+        user = request.user
+
+        if user in challenge.challenger_picks.all():
+            challenge.challenger_picks.remove(user)
+        if user not in challenge.original_picks.all():
+            challenge.original_picks.add(user)
+        else:
+            challenge.original_picks.remove(user)
+
+        challenge.save()
+        return Response({'original_picks': challenge.original_picks.count(), 'challenger_picks': challenge.challenger_picks.count()}, status=status.HTTP_200_OK)
+    except Challenge.DoesNotExist:
+        return Response({'error': 'Challenge not found'}, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(['POST'])
+def pick_challenger(request, challenge_id):
+    try:
+        challenge = Challenge.objects.get(id=challenge_id)
+        user = request.user
+
+        if user in challenge.original_picks.all():
+            challenge.original_picks.remove(user)
+        if user not in challenge.challenger_picks.all():
+            challenge.challenger_picks.add(user)
+        else:
+            challenge.challenger_picks.remove(user)
+
+        challenge.save()
+        return Response({'original_picks': challenge.original_picks.count(), 'challenger_picks': challenge.challenger_picks.count()}, status=status.HTTP_200_OK)
+    except Challenge.DoesNotExist:
+        return Response({'error': 'Challenge not found'}, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(['GET'])
+def get_original_picks(request, challenge_id):
+    try:
+        challenge = Challenge.objects.get(id=challenge_id)
+        users = challenge.original_picks.all()
+        serializer = UserSerializer(users, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    except Challenge.DoesNotExist:
+        return Response({'error': 'Challenge not found'}, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(['GET'])
+def get_challenger_picks(request, challenge_id):
+    try:
+        challenge = Challenge.objects.get(id=challenge_id)
+        users = challenge.challenger_picks.all()
+        serializer = UserSerializer(users, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    except Challenge.DoesNotExist:
+        return Response({'error': 'Challenge not found'}, status=status.HTTP_404_NOT_FOUND)
+    
 
 ### COMBINED ###
 class UserCombinedView(generics.ListAPIView):
