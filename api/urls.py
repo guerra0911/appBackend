@@ -30,6 +30,7 @@ urlpatterns = [
     path("challenges/<int:challenge_id>/pick_challenger/", views.pick_challenger, name='pick-challenger'),
     path("challenges/<int:challenge_id>/get_original_picks/", views.get_original_picks, name='get-original-picks'),
     path("challenges/<int:challenge_id>/get_challenger_picks/", views.get_challenger_picks, name='get-challenger-picks'),
+    path("challenges/<int:challenge_id>/has_user_selected_winner/", views.has_user_selected_winner, name='has-user-selected-winner'),
     path("subs/all/", views.AllSubsView.as_view(), name="all-subs"),
     path("subs/user/<int:user_id>/", views.UserSubsView.as_view(), name="user-subs"),
     path("subs/following/", views.FollowingSubsView.as_view(), name="following-subs"),
