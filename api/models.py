@@ -76,14 +76,12 @@ class Profile(models.Model):
     blocking = models.ManyToManyField(User, related_name='blocking', default=0)
     image = models.ImageField(upload_to='profile_pics', default='profile_pics/default.jpg')
     email = models.EmailField(max_length=254, validators=[EmailValidator()], blank=True)
-
-    def update_profile(self, username=None, image=None):
-        if username:
-            self.user.username = username
-            self.user.save()
-        if image:
-            self.image = image
-            self.save()
+    auto_accept_challenges = models.BooleanField(default=False)
+    challenge_requests = models.ManyToManyField('Challenge', related_name='challenge_requests', blank=True)
+    challenges_sent = models.ManyToManyField('Challenge', related_name='challenges_sent', blank=True)
+    challenges_declined = models.ManyToManyField('Challenge', related_name='challenges_declined', blank=True)
+    active_challenges_made = models.ManyToManyField('Challenge', related_name='active_challenges_made', blank=True)
+    active_challenges_received = models.ManyToManyField('Challenge', related_name='active_challenges_received', blank=True)
 
     def calculate_rating(self):
         likes_count = Note.objects.filter(author=self.user).aggregate(total_likes=Count('likes'))['total_likes']

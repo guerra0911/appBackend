@@ -15,7 +15,7 @@ class ProfileSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Profile
-        fields = ['id', 'bio', 'location', 'birthday', 'spotify_url', 'imdb_url', 'website_url', 'privacy_flag', 'notification_flag', 'rating', 'following', 'followers', 'requests', 'requesting', 'image', 'email', 'blocked_by', 'blocking']
+        fields = ['id', 'bio', 'location', 'birthday', 'spotify_url', 'imdb_url', 'website_url', 'privacy_flag', 'notification_flag', 'rating', 'following', 'followers', 'requests', 'requesting', 'image', 'email', 'blocked_by', 'blocking', 'auto_accept_challenges', 'challenge_requests', 'challenges_sent', 'challenges_declined', 'active_challenges_made', 'active_challenges_received']
 
     
 class UserSerializer(serializers.ModelSerializer):

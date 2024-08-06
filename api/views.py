@@ -133,31 +133,76 @@ class UpdateUserProfileView(APIView):
         user = request.user
         data = request.data
 
-        # Print the incoming data
-        print("Request data:", data)
+        profile_data = {}
+        if 'bio' in data:
+            profile_data['bio'] = data['bio']
+        if 'location' in data:
+            profile_data['location'] = data['location']
+        if 'birthday' in data:
+            profile_data['birthday'] = data['birthday']
+        if 'spotify_url' in data:
+            profile_data['spotify_url'] = data['spotify_url']
+        if 'imdb_url' in data:
+            profile_data['imdb_url'] = data['imdb_url']
+        if 'website_url' in data:
+            profile_data['website_url'] = data['website_url']
+        if 'privacy_flag' in data:
+            profile_data['privacy_flag'] = data['privacy_flag'].lower() == 'true'
+        if 'notification_flag' in data:
+            profile_data['notification_flag'] = data['notification_flag'].lower() == 'true'
+        if 'email' in data:
+            profile_data['email'] = data['email']
+        if 'auto_accept_challenges' in data:
+            profile_data['auto_accept_challenges'] = data['auto_accept_challenges'].lower() == 'true'
+        
+        if 'image' in request.FILES:
+            profile_data['image'] = request.FILES['image']
 
-        # If the profile is made public, accept all follow requests
-        if 'profile.privacy_flag' in data and data['profile.privacy_flag'] == 'false':
-            for requester in user.profile.requests.all():
-                print(requester)
-                requester.profile.requesting.remove(user)
-                requester.profile.following.add(user)
-                user.profile.followers.add(requester)
-            user.profile.requests.clear()
+        profile_serializer = ProfileSerializer(user.profile, data=profile_data, partial=True)
+        user_serializer = UserSerializer(user, data=data, partial=True)
 
-        # Print data before serialization
-        print("Serializer data before validation:", data)
+        if profile_serializer.is_valid() and user_serializer.is_valid():
+            # Handle privacy flag logic
+            if 'privacy_flag' in profile_data:
+                new_privacy_flag = profile_data['privacy_flag']
+                if new_privacy_flag == False:  # Public profile
+                    for requester in user.profile.requests.all():
+                        requester.profile.requesting.remove(user)
+                        requester.profile.following.add(user)
+                        user.profile.followers.add(requester)
+                    user.profile.requests.clear()
 
-        serializer = UserSerializer(user, data=data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
-            # Print the serialized data after saving
-            print("Serialized data after saving:", serializer.data)
-            return Response(serializer.data, status=status.HTTP_200_OK)
-        # Print errors if serializer is not valid
-        print("Serializer errors:", serializer.errors)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
- 
+            # Handle auto-accept challenges logic
+            if 'auto_accept_challenges' in profile_data and profile_data['auto_accept_challenges']:
+                pending_challenges = user.profile.challenge_requests.filter(pending=True)
+                current_time = timezone.now()
+
+                for challenge in pending_challenges:
+                    challenge.pending = False
+                    challenge.accepted = True
+                    challenge.declined = False
+                    challenge.created_at = current_time
+                    challenge.challenger_note.created_at = current_time
+                    challenge.challenger_note.save()
+                    challenge.save()
+
+                    user.profile.challenge_requests.remove(challenge)
+                    user.profile.active_challenges_received.add(challenge)
+                    challenge.challenger_note.author.profile.active_challenges_made.add(challenge)
+                    challenge.challenger_note.author.profile.challenges_sent.remove(challenge)
+
+            profile_serializer.save()
+            user_serializer.save()
+            return Response(user_serializer.data, status=status.HTTP_200_OK)
+        else:
+            profile_errors = profile_serializer.errors if not profile_serializer.is_valid() else {}
+            user_errors = user_serializer.errors if not user_serializer.is_valid() else {}
+            return Response({
+                'profile_errors': profile_errors,
+                'user_errors': user_errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+
 class FollowView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -251,6 +296,7 @@ class BlockView(APIView):
             to_block = User.objects.get(id=user_id)
             current_user = request.user
 
+            # Remove from following/followers/requests/requesting lists
             if to_block in current_user.profile.following.all():
                 current_user.profile.following.remove(to_block)
                 to_block.profile.followers.remove(current_user)
@@ -263,13 +309,32 @@ class BlockView(APIView):
             if to_block in current_user.profile.requesting.all():
                 current_user.profile.requesting.remove(to_block)
                 to_block.profile.requests.remove(current_user)
-            
+
+            # Add to blocking/blocked_by lists
             current_user.profile.blocking.add(to_block)
             to_block.profile.blocked_by.add(current_user)
-               
+
+            # Fetch and delete relevant challenges
+            challenge_lists = [
+                current_user.profile.challenge_requests,
+                current_user.profile.challenges_sent,
+                current_user.profile.challenges_declined,
+                current_user.profile.active_challenges_made,
+                current_user.profile.active_challenges_received
+            ]
+            
+            for challenge_list in challenge_lists:
+                challenges_to_delete = challenge_list.filter(
+                    Q(original_note__author=to_block) | Q(challenger_note__author=to_block)
+                )
+                for challenge in challenges_to_delete:
+                    challenge.delete()
+
             return Response({'status': 'user blocked'}, status=status.HTTP_200_OK)
         except User.DoesNotExist:
             return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
  
 class UnblockView(APIView):
     permission_classes = [IsAuthenticated]
@@ -588,14 +653,27 @@ class CreateChallengeView(generics.CreateAPIView):
     permission_classes = [IsAuthenticated]
 
     def perform_create(self, serializer):
-        # The original note being challenged
         original_note = Note.objects.get(pk=self.request.data['original_note'])
-
-        # The challenger note
         challenger_note = Note.objects.get(pk=self.request.data['challenger_note'])
-
-        # Save the challenge linking the original and challenger notes
-        serializer.save(original_note=original_note, challenger_note=challenger_note, wager=self.request.data.get('wager', 0))
+        challenge = serializer.save(original_note=original_note, challenger_note=challenger_note, wager=self.request.data.get('wager', 0))
+        
+        with transaction.atomic():
+            original_note.author.profile.challenge_requests.add(challenge)
+            challenger_note.author.profile.challenges_sent.add(challenge)
+            
+            if original_note.author.profile.auto_accept_challenges:
+                current_time = timezone.now()
+                challenge.pending = False
+                challenge.accepted = True
+                challenge.declined = False
+                challenge.created_at = current_time
+                challenge.challenger_note.created_at = current_time
+                challenge.challenger_note.save()
+                challenge.save()
+                original_note.author.profile.challenge_requests.remove(challenge)
+                original_note.author.profile.active_challenges_received.add(challenge)
+                challenger_note.author.profile.active_challenges_made.add(challenge)
+                challenger_note.author.profile.challenges_sent.remove(challenge)
     
 class UserChallengesView(generics.ListAPIView):
     serializer_class = ChallengeSerializer
@@ -729,44 +807,50 @@ class RelatedChallengesView(generics.ListAPIView):
 
         return queryset.order_by('-created_at')
 
-class ChallengeRequestsView(generics.ListAPIView):
-    serializer_class = ChallengeSerializer
+class ChallengeRequestsView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def get_queryset(self):
-        user = self.request.user
-        return Challenge.objects.filter(
-            original_note__author=user,
-            pending=True,
-            accepted=False,
-            declined=False
-        )
+    def get(self, request):
+        user = request.user
+        challenge_requests = user.profile.challenge_requests.filter(pending=True)
+        serializer = ChallengeSerializer(challenge_requests, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
-class RequestingChallengeView(generics.ListAPIView):
-    serializer_class = ChallengeSerializer
+class ChallengesSentView(generics.ListAPIView):
     permission_classes = [IsAuthenticated]
 
-    def get_queryset(self):
-        user = self.request.user
-        return Challenge.objects.filter(
-            challenger_note__author=user,
-            pending=True,
-            accepted=False,
-            declined=False
-        )
+    def get(self, request):
+        user = request.user
+        challenges_sent = user.profile.challenges_sent.filter(pending=True)
+        serializer = ChallengeSerializer(challenges_sent, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
-class DeclinedChallengeView(generics.ListAPIView):
-    serializer_class = ChallengeSerializer
+class ChallengesDeclinedView(generics.ListAPIView):
     permission_classes = [IsAuthenticated]
 
-    def get_queryset(self):
-        user = self.request.user
-        return Challenge.objects.filter(
-            challenger_note__author=user,
-            pending=False,
-            accepted=False,
-            declined=True
-        )
+    def get(self, request):
+        user = request.user
+        challenges_declined = user.profile.challenges_declined.filter(declined=True)
+        serializer = ChallengeSerializer(challenges_declined, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+class ActiveChallengesMadeView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        active_challenges_made = user.profile.active_challenges_made.filter(accepted=True)
+        serializer = ChallengeSerializer(active_challenges_made, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+class ActiveChallengesReceivedView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        active_challenges_received = user.profile.active_challenges_received.filter(accepted=True)
+        serializer = ChallengeSerializer(active_challenges_received, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 ### CHALLENGE ACTIONS ###
@@ -784,6 +868,13 @@ class AcceptChallengeView(APIView): # Called From Current User
             challenge.challenger_note.created_at = current_time  # Update the created_at of the challenger_note
             challenge.challenger_note.save()  # Save the updated challenger_note
             challenge.save()  # Save the updated challenge
+            
+            # Update challenge request list
+            challenge.original_note.author.profile.challenge_requests.remove(challenge)
+            challenge.original_note.author.profile.active_challenges_received.add(challenge)
+            challenge.challenger_note.author.profile.active_challenges_made.add(challenge)
+            challenge.challenger_note.author.profile.challenges_sent.remove(challenge)
+            
             return Response({'status': 'accepted'}, status=status.HTTP_200_OK)
         except Challenge.DoesNotExist:
             return Response({'error': 'Challenge not found'}, status=status.HTTP_404_NOT_FOUND)
@@ -800,6 +891,12 @@ class DeclineChallengeView(APIView):
             challenge.accepted = False
             challenge.declined = True
             challenge.save()
+            
+            # Update challenge request list
+            challenge.original_note.author.profile.challenge_requests.remove(challenge)
+            challenge.challenger_note.author.profile.challenges_sent.remove(challenge)
+            challenge.challenger_note.author.profile.challenges_declined.add(challenge)         
+            
             return Response({'status': 'declined'}, status=status.HTTP_200_OK)
         except Challenge.DoesNotExist:
             return Response({'error': 'Challenge not found'}, status=status.HTTP_404_NOT_FOUND)
@@ -815,6 +912,26 @@ class ResubmitChallengeView(APIView):
             challenge.pending = True
             challenge.accepted = False
             challenge.declined = False
+            
+            if challenge.original_note.author.profile.auto_accept_challenges:
+                current_time = timezone.now()
+                challenge.pending = False
+                challenge.accepted = True
+                challenge.declined = False
+                challenge.created_at = current_time
+                challenge.challenger_note.created_at = current_time
+                challenge.challenger_note.save()
+
+                # Update challenge lists
+                challenge.challenger_note.author.profile.challenges_declined.remove(challenge)
+                challenge.original_note.author.profile.active_challenges_received.add(challenge)
+                challenge.challenger_note.author.profile.active_challenges_made.add(challenge)
+            else:
+                challenge.challenger_note.author.profile.challenges_declined.remove(challenge)
+                challenge.challenger_note.author.profile.challenges_sent.add(challenge)
+                challenge.original_note.author.profile.challenge_requests.add(challenge)
+                
+
             challenge.save()
             return Response({'status': 'resubmitted'}, status=status.HTTP_200_OK)
         except Challenge.DoesNotExist:
@@ -834,6 +951,51 @@ class DeleteChallengeView(APIView):
             return Response({'error': 'Challenge not found'}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+class AcceptAllChallengeRequestsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        user = request.user
+        pending_challenges = user.profile.challenge_requests.filter(pending=True)
+        current_time = timezone.now()
+
+        for challenge in pending_challenges:
+            challenge.pending = False
+            challenge.accepted = True
+            challenge.declined = False
+            challenge.created_at = current_time
+            challenge.challenger_note.created_at = current_time
+            challenge.challenger_note.save()
+            challenge.save()
+
+            user.profile.challenge_requests.remove(challenge)
+            user.profile.active_challenges_received.add(challenge)
+            challenge.challenger_note.author.profile.active_challenges_made.add(challenge)
+            challenge.challenger_note.author.profile.challenges_sent.remove(challenge)
+
+        return Response({'status': 'all_accepted'}, status=status.HTTP_200_OK)
+
+
+class DeclineAllChallengeRequestsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        user = request.user
+        pending_challenges = user.profile.challenge_requests.filter(pending=True)
+
+        for challenge in pending_challenges:
+            challenge.pending = False
+            challenge.accepted = False
+            challenge.declined = True
+            challenge.save()
+
+            user.profile.challenge_requests.remove(challenge)
+            challenge.challenger_note.author.profile.challenges_sent.remove(challenge)
+            challenge.challenger_note.author.profile.challenges_declined.add(challenge)
+
+        return Response({'status': 'all_declined'}, status=status.HTTP_200_OK)
+
 
 @api_view(['POST'])
 def pick_original(request, challenge_id):
