@@ -14,6 +14,8 @@ from django.db.models import Count, Q, F
 from django.db import transaction
 from django.utils import timezone
 import json
+from django.http import JsonResponse
+from django.core.cache import cache
 
 import logging
 
@@ -1052,18 +1054,6 @@ def get_challenger_picks(request, challenge_id):
         return Response(serializer.data, status=status.HTTP_200_OK)
     except Challenge.DoesNotExist:
         return Response({'error': 'Challenge not found'}, status=status.HTTP_404_NOT_FOUND)
-
-@api_view(['GET'])
-def has_user_selected_winner(request, challenge_id):
-    try:
-        challenge = Challenge.objects.get(id=challenge_id)
-        user = request.user
-        has_picked = user in challenge.original_picks.all() or user in challenge.challenger_picks.all()
-        return Response({'has_picked': has_picked}, status=status.HTTP_200_OK)
-    except Challenge.DoesNotExist:
-        return Response({'error': 'Challenge not found'}, status=status.HTTP_404_NOT_FOUND)
-
-    
 
 ### COMBINED ###
 class UserCombinedView(generics.ListAPIView):
