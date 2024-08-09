@@ -32,7 +32,6 @@ urlpatterns = [
     path("challenges/<int:challenge_id>/pick_challenger/", views.pick_challenger, name='pick-challenger'),
     path("challenges/<int:challenge_id>/get_original_picks/", views.get_original_picks, name='get-original-picks'),
     path("challenges/<int:challenge_id>/get_challenger_picks/", views.get_challenger_picks, name='get-challenger-picks'),
-    path("challenges/<int:challenge_id>/has_user_selected_winner/", views.has_user_selected_winner, name='has-user-selected-winner'),
     path("challenges/accept_all/", views.AcceptAllChallengeRequestsView.as_view(), name='accept-all-challenges'),
     path("challenges/decline_all/", views.DeclineAllChallengeRequestsView.as_view(), name='decline-all-challenges'),
     path("subs/all/", views.AllSubsView.as_view(), name="all-subs"),
