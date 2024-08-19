@@ -32,8 +32,17 @@ class CurrentUserView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        serializer = UserSerializer(request.user)
-        return Response(serializer.data)
+        user = request.user
+        user.profile.calculate_rating()
+        user_serializer = UserSerializer(user)
+        profile_serializer = ProfileSerializer(user.profile)
+        notes_serializer = NoteSerializer(user.notes.all(), many=True)
+        return Response({
+            'id': user_serializer.data['id'],
+            'username': user_serializer.data['username'],
+            'profile': profile_serializer.data,
+            'posts': notes_serializer.data,
+        })
     
 ### PROFILE ###
 class UserProfileView(APIView):
